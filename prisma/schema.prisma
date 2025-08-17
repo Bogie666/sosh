@@ -1,0 +1,389 @@
+// prisma/schema.prisma - Enhanced for Phase 1 Features
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User Management for Sosh
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  googleId      String?   @unique
+  role          UserRole  @default(USER)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  businesses    UserBusiness[]
+  scheduledPosts ScheduledPost[]
+  contentTemplates ContentTemplate[]
+  activityLogs  ActivityLog[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// Business Management for HVAC/Plumbing/Electrical Companies
+model Business {
+  id          String   @id @default(cuid())
+  name        String   // "Lex Air Conditioning"
+  displayName String   // "Lex Dallas"
+  type        String   // "hvac", "plumbing", "electrical", "all"
+  website     String?
+  phone       String?
+  address     String?
+  logo        String?
+  brandVoice  String?  @db.Text // AI personality description
+  tagline     String?  // "The Gold Standard of White Glove Service"
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations (existing)
+  users           UserBusiness[]
+  platformConfigs PlatformConfig[]
+  monthlySpecials MonthlySpecial[]
+  reviews         Review[]
+  postHistory     PostHistory[]
+  
+  // NEW PHASE 1 RELATIONS
+  businessProfile BusinessProfile?
+  contentBlocks   ContentBlock[]
+  imageLibrary    ImageLibrary[]
+
+  @@map("businesses")
+}
+
+model UserBusiness {
+  id         String       @id @default(cuid())
+  userId     String
+  businessId String
+  role       BusinessRole @default(MEMBER)
+  createdAt  DateTime     @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId])
+  @@map("user_businesses")
+}
+
+// NEW PHASE 1 MODEL: Extended Business Profile
+model BusinessProfile {
+  id               String   @id @default(cuid())
+  businessId       String   @unique
+  
+  // Enhanced brand voice and messaging
+  brandVoice       String?  @db.Text
+  messageStyle     String?  // "professional", "friendly", "technical"
+  voiceTone        String?  // "formal", "casual", "enthusiastic"
+  
+  // Contact & Business Info
+  emergencyContact String?
+  afterHoursPhone  String?
+  licenseInfo      String?  @db.Text
+  certifications   String[] // ["NATE Certified", "EPA Licensed"]
+  
+  // Business Operations
+  businessHours    Json?    // Structured hours data
+  serviceAreas     String[] // Cities/regions served
+  serviceTypes     String[] // ["residential", "commercial", "emergency"]
+  
+  // Content Preferences
+  approvedTemplates String[] // Template IDs that are approved for use
+  contentThemes    String[] // ["educational", "seasonal", "promotional"]
+  autoPostSettings Json?    // Automation preferences
+  
+  // Seasonal & Special Settings
+  seasonalSettings Json?    // Winter/summer messaging preferences
+  holidaySettings  Json?    // Holiday-specific content rules
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@map("business_profiles")
+}
+
+// NEW PHASE 1 MODEL: Content Blocks Library
+model ContentBlock {
+  id          String   @id @default(cuid())
+  businessId  String
+  
+  // Block Identification
+  name        String   // "Standard Phone Number", "Emergency CTA", "Licensing Info"
+  type        String   // "phone", "cta", "licensing", "hours", "address", "custom"
+  category    String?  // "contact", "legal", "promotional", "informational"
+  
+  // Content
+  content     String   @db.Text
+  shortCode   String?  // "{PHONE}" for easy template insertion
+  
+  // Usage & Settings
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  usageCount  Int      @default(0)
+  
+  // Platform specific variations
+  platforms   Json?    // Platform-specific versions if needed
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@map("content_blocks")
+}
+
+// NEW PHASE 1 MODEL: Enhanced Image Library with AI Tagging
+model ImageLibrary {
+  id           String   @id @default(cuid())
+  businessId   String
+  
+  // File Information
+  fileName     String
+  originalName String
+  fileSize     Int
+  mimeType     String
+  dimensions   Json     // {width: 1920, height: 1080}
+  
+  // Storage URLs
+  cloudUrl     String   // Primary cloud storage URL
+  thumbnailUrl String?  // Optimized thumbnail (400x400)
+  
+  // Platform-specific optimized versions with your specs
+  platformUrls Json     // {
+                        //   facebook: {landscape: "1200x630_url", square: "1080x1080_url"},
+                        //   instagram: {square: "1080x1080_url", portrait: "1080x1350_url"},
+                        //   twitter: {single: "1200x675_url", multi: "700x800_url"},
+                        //   google: {square: "720x720_url"}
+                        // }
+  
+  // AI-Generated Tags (OpenAI Vision API)
+  aiTags       String[] // ["hvac_work", "team_photo", "truck", "before_after", "equipment"]
+  aiConfidence Json     // Confidence scores for each tag
+  aiDescription String? @db.Text // AI-generated description
+  
+  // Manual Tags & Organization
+  manualTags   String[] // User-added tags
+  category     String?  // "work", "team", "equipment", "results", "facility"
+  subcategory  String?  // "installation", "repair", "maintenance", "group_photo"
+  
+  // Usage & Status
+  isActive     Boolean  @default(true)
+  isPublic     Boolean  @default(false) // Can other businesses use this image
+  usageCount   Int      @default(0)
+  lastUsed     DateTime?
+  
+  // Metadata
+  location     String?  // Where photo was taken
+  workOrder    String?  // Associated work order number
+  customer     String?  // Customer name (for before/after shots)
+  
+  uploadedAt   DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  @@map("image_library")
+}
+
+// Platform API Configuration Storage
+model PlatformConfig {
+  id           String            @id @default(cuid())
+  businessId   String
+  platform     SocialPlatform
+  credentials  String            @db.Text // Encrypted JSON with API keys
+  isActive     Boolean           @default(true)
+  lastTested   DateTime?
+  status       ConnectionStatus  @default(PENDING)
+  errorMessage String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, platform])
+  @@map("platform_configs")
+}
+
+// Scheduled Post Management
+model ScheduledPost {
+  id           String     @id @default(cuid())
+  userId       String
+  content      String     @db.Text
+  platforms    String[]   // ["google", "facebook", "twitter"]
+  businesses   String[]   // Business IDs to post for
+  images       String[]   // Image URLs from cloud storage
+  scheduledFor DateTime
+  status       PostStatus @default(SCHEDULED)
+  errorMessage String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("scheduled_posts")
+}
+
+// Post History & Analytics
+model PostHistory {
+  id           String         @id @default(cuid())
+  businessId   String
+  platform     SocialPlatform
+  content      String         @db.Text
+  externalId   String?        // Platform's post/tweet ID
+  images       String[]       // Image URLs
+  status       PostStatus
+  errorMessage String?
+  engagement   Json?          // Likes, shares, comments, etc.
+  postedAt     DateTime       @default(now())
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("post_history")
+}
+
+// Content Templates for Reuse
+model ContentTemplate {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String   // "Winter HVAC Tips"
+  content     String   @db.Text
+  category    String   // "seasonal", "maintenance", "promotion"
+  platforms   String[] // Platforms this works best for
+  businesses  String[] // Which businesses can use this
+  isPublic    Boolean  @default(false) // Share with other users
+  usageCount  Int      @default(0) // Track popularity
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("content_templates")
+}
+
+// Monthly Specials Management (Enhanced existing system)
+model MonthlySpecial {
+  id         String   @id @default(cuid())
+  businessId String
+  month      Int      // 0-11 (JavaScript month format)
+  year       Int
+  hvac       String[] // Array of HVAC specials
+  plumbing   String[] // Array of plumbing specials
+  electrical String[] // Array of electrical specials
+  all        String[] // Specials that apply to all services
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, month, year])
+  @@map("monthly_specials")
+}
+
+// Review Management from Google/Facebook/etc
+model Review {
+  id           String         @id @default(cuid())
+  businessId   String
+  platform     SocialPlatform
+  externalId   String         // Platform's review ID
+  rating       Int            // 1-5 stars
+  content      String         @db.Text
+  reviewerName String
+  reviewDate   DateTime
+  replyContent String?        @db.Text
+  replyDate    DateTime?
+  sentiment    String?        // "positive", "negative", "neutral"
+  priority     String?        // "low", "medium", "high", "urgent"
+  aiGenerated  Boolean        @default(false) // Was reply AI generated
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, platform, externalId])
+  @@map("reviews")
+}
+
+// Activity Logging for Audit Trail
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String
+  action    String   // "posted_content", "generated_ai_response", "updated_business"
+  details   Json?    // Additional context
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("activity_logs")
+}
+
+// Enums
+enum UserRole {
+  USER         // Regular ServiceStar employee
+  ADMIN        // ServiceStar manager
+  SUPER_ADMIN  // Platform administrator
+}
+
+enum BusinessRole {
+  MEMBER  // Can post and view
+  ADMIN   // Can manage settings
+  OWNER   // Full control
+}
+
+enum SocialPlatform {
+  GOOGLE
+  FACEBOOK
+  INSTAGRAM
+  TWITTER
+}
+
+enum ConnectionStatus {
+  PENDING    // Not tested yet
+  CONNECTED  // Working
+  FAILED     // Has errors
+  EXPIRED    // Needs re-auth
+}
+
+enum PostStatus {
+  SCHEDULED  // Waiting to post
+  POSTING    // Currently posting
+  POSTED     // Successfully posted
+  FAILED     // Failed to post
+  CANCELLED  // User cancelled
+}
