@@ -1,9 +1,10 @@
 // src/app/api/businesses/[businessId]/images/route.ts
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+// GET - Fetch images for a business with advanced filtering and pagination
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: { businessId: string } }
 ) {
   try {
