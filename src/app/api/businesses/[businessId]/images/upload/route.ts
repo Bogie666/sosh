@@ -169,7 +169,7 @@ export async function POST(
         thumbnailUrl: `/uploads/images/${businessId}/${thumbnailFileName}`,
         platformUrls,
         aiTags,
-        aiConfidence: generateConfidenceScores(aiTags),
+        aiConfidence: aiAnalysis.confidence,
         aiDescription,
         manualTags: [],
         category,
@@ -213,7 +213,7 @@ async function analyzeImageWithAI(imageBuffer: Buffer, filename: string) {
     const mimeType = filename.toLowerCase().endsWith('.png') ? 'image/png' : 'image/jpeg'
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4-vision-preview",
+      model: "gpt-4o", // Updated to current vision model
       max_tokens: 300,
       messages: [
         {
