@@ -60,6 +60,12 @@ export default function MonthlySpecialsManager() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null)
 
+  // FIXED: Helper function to safely get array values
+  const getArrayValue = (obj: MonthlySpecial, key: keyof MonthlySpecial): string[] => {
+    const value = obj[key];
+    return Array.isArray(value) ? value : [];
+  };
+
   useEffect(() => {
     loadBusinesses()
   }, [])
@@ -345,7 +351,8 @@ export default function MonthlySpecialsManager() {
                       {totalSpecials > 0 ? (
                         <div className="space-y-2">
                           {SERVICE_TYPES.map(serviceType => {
-                            const count = special ? special[serviceType.key as keyof MonthlySpecial]?.length || 0 : 0
+                            // FIXED: Use helper function for type-safe access
+                            const count = special ? getArrayValue(special, serviceType.key as keyof MonthlySpecial).length : 0;
                             if (count === 0) return null
                             
                             return (
@@ -405,47 +412,54 @@ export default function MonthlySpecialsManager() {
                     </p>
                   </div>
 
-                  {SERVICE_TYPES.map(serviceType => (
-                    <div key={serviceType.key} className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h5 className={`font-medium ${serviceType.color}`}>
-                          {serviceType.label}
-                        </h5>
-                        <button
-                          onClick={() => addSpecialItem(serviceType.key as any)}
-                          className="btn btn-outline btn-sm"
-                        >
-                          ➕ Add Special
-                        </button>
-                      </div>
+                  {SERVICE_TYPES.map(serviceType => {
+                    // FIXED: Use helper function for type-safe access
+                    const items = getArrayValue(editingSpecial, serviceType.key as keyof MonthlySpecial);
+                    
+                    return (
+                      <div key={serviceType.key} className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h5 className={`font-medium ${serviceType.color}`}>
+                            {serviceType.label}
+                          </h5>
+                          <button
+                            onClick={() => addSpecialItem(serviceType.key as any)}
+                            className="btn btn-outline btn-sm"
+                          >
+                            ➕ Add Special
+                          </button>
+                        </div>
 
-                      <div className="space-y-2">
-                        {editingSpecial[serviceType.key as keyof MonthlySpecial].map((special: string, index: number) => (
-                          <div key={index} className="flex gap-2">
-                            <input
-                              type="text"
-                              value={special}
-                              onChange={(e) => updateSpecialItem(serviceType.key as any, index, e.target.value)}
-                              placeholder={`Enter ${serviceType.label.toLowerCase()} special...`}
-                              className="form-control flex-1"
-                            />
-                            <button
-                              onClick={() => removeSpecialItem(serviceType.key as any, index)}
-                              className="btn btn-outline btn-sm text-red-400 hover:bg-red-400/10"
-                            >
-                              ❌
-                            </button>
-                          </div>
-                        ))}
+                        <div className="space-y-2">
+                          {/* FIXED: Use helper function result which is always an array */}
+                          {items.map((special: string, index: number) => (
+                            <div key={index} className="flex gap-2">
+                              <input
+                                type="text"
+                                value={special}
+                                onChange={(e) => updateSpecialItem(serviceType.key as any, index, e.target.value)}
+                                placeholder={`Enter ${serviceType.label.toLowerCase()} special...`}
+                                className="form-control flex-1"
+                              />
+                              <button
+                                onClick={() => removeSpecialItem(serviceType.key as any, index)}
+                                className="btn btn-outline btn-sm text-red-400 hover:bg-red-400/10"
+                              >
+                                ❌
+                              </button>
+                            </div>
+                          ))}
 
-                        {editingSpecial[serviceType.key as keyof MonthlySpecial].length === 0 && (
-                          <div className="text-center py-3 text-dark-text-muted text-sm border-2 border-dashed border-slate-600/30 rounded">
-                            No {serviceType.label.toLowerCase()} specials for this month
-                          </div>
-                        )}
+                          {/* FIXED: Use helper function result which is always an array */}
+                          {items.length === 0 && (
+                            <div className="text-center py-3 text-dark-text-muted text-sm border-2 border-dashed border-slate-600/30 rounded">
+                              No {serviceType.label.toLowerCase()} specials for this month
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}

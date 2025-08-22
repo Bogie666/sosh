@@ -59,39 +59,3 @@ export async function POST(request: Request) {
   }
 }
 
-// src/app/api/images/bulk-delete/route.ts
-export async function POST(request: Request) {
-  try {
-    const { imageIds } = await request.json()
-
-    if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
-      return NextResponse.json({
-        success: false,
-        error: 'Image IDs array is required'
-      }, { status: 400 })
-    }
-
-    // Delete images from database
-    const deleteResult = await prisma.imageLibrary.deleteMany({
-      where: {
-        id: { in: imageIds }
-      }
-    })
-
-    // Note: In production, you'd also want to delete the actual files from storage
-    // For now, we'll just mark them as inactive in the database
-
-    return NextResponse.json({
-      success: true,
-      message: `Deleted ${deleteResult.count} images`,
-      deletedCount: deleteResult.count
-    })
-
-  } catch (error) {
-    console.error('Bulk delete operation failed:', error)
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Bulk delete operation failed'
-    }, { status: 500 })
-  }
-}

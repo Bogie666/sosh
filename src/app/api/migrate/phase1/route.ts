@@ -115,18 +115,19 @@ export async function POST() {
     for (const business of businesses) {
       for (const blockTemplate of standardBlocks) {
         const block = await prisma.contentBlock.create({
-          data: {
-            businessId: business.id,
-            name: blockTemplate.name,
-            type: blockTemplate.type,
-            category: blockTemplate.category,
-            content: blockTemplate.name === 'Standard Phone Number' 
-              ? business.phone || 'Call us today!' 
-              : blockTemplate.content,
-            shortCode: blockTemplate.shortCode,
-            sortOrder: blockTemplate.sortOrder
-          }
-        })
+  data: {
+    businessId: business.id,
+    name: blockTemplate.name,
+    type: blockTemplate.type,
+    category: blockTemplate.category,
+    // FIXED: Handle undefined values properly
+    content: blockTemplate.name === 'Standard Phone Number' 
+      ? (business.phone ?? 'Call us today!') 
+      : (blockTemplate.content ?? 'Default content'),
+    shortCode: blockTemplate.shortCode,
+    sortOrder: blockTemplate.sortOrder
+  }
+})
         
         blocksCreated.push({
           businessId: business.id,

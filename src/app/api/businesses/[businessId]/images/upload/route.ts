@@ -1,10 +1,18 @@
 // src/app/api/businesses/[businessId]/images/upload/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
+import { Storage } from '@google-cloud/storage'
 import { v4 as uuidv4 } from 'uuid'
 import sharp from 'sharp'
+
+// Initialize Google Cloud Storage
+const storage = new Storage({
+  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+  credentials: process.env.GOOGLE_CLOUD_CREDENTIALS ? JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS) : undefined
+})
+
+const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET || 'sosh-images'
+const bucket = storage.bucket(bucketName)
 
 // POST - Upload and process images
 export async function POST(
@@ -56,10 +64,6 @@ export async function POST(
     const extension = file.name.split('.').pop()?.toLowerCase() || 'jpg'
     const fileName = `${fileId}.${extension}`
 
-    // Create upload directory if it doesn't exist
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'images', businessId)
-    await mkdir(uploadDir, { recursive: true })
-
     // Convert to buffer
     const buffer = Buffer.from(await file.arrayBuffer())
 
@@ -74,74 +78,147 @@ export async function POST(
       )
     }
 
-    // Save original file
-    const originalPath = join(uploadDir, fileName)
-    await writeFile(originalPath, buffer)
+    // Upload original to Google Cloud Storage
+    const originalPath = `images/${businessId}/${fileName}`
+    const originalFile = bucket.file(originalPath)
+    
+    await originalFile.save(buffer, {
+      metadata: {
+        contentType: file.type,
+        metadata: {
+          originalName: file.name,
+          businessId: businessId,
+          uploadedAt: new Date().toISOString()
+        }
+      },
+      public: true
+    })
+
+    const originalUrl = `https://storage.googleapis.com/${bucketName}/${originalPath}`
 
     // Create thumbnail (400x400)
-    const thumbnailFileName = `thumb_${fileName}`
-    const thumbnailPath = join(uploadDir, thumbnailFileName)
-    await image
+    const thumbnailBuffer = await image
       .resize(400, 400, { fit: 'cover', position: 'center' })
       .jpeg({ quality: 85 })
-      .toFile(thumbnailPath)
+      .toBuffer()
+
+    const thumbnailPath = `images/${businessId}/thumbs/thumb_${fileId}.jpg`
+    const thumbnailFile = bucket.file(thumbnailPath)
+    
+    await thumbnailFile.save(thumbnailBuffer, {
+      metadata: {
+        contentType: 'image/jpeg'
+      },
+      public: true
+    })
+
+    const thumbnailUrl = `https://storage.googleapis.com/${bucketName}/${thumbnailPath}`
 
     // Create platform-specific optimized versions
     const platformUrls: any = {}
 
     // Facebook optimizations
-    const facebookLandscapeFileName = `fb_landscape_${fileId}.jpg`
-    const facebookSquareFileName = `fb_square_${fileId}.jpg`
-    
-    await image.resize(1200, 630, { fit: 'cover' }).jpeg({ quality: 85 })
-      .toFile(join(uploadDir, facebookLandscapeFileName))
-    
-    await image.resize(1080, 1080, { fit: 'cover' }).jpeg({ quality: 85 })
-      .toFile(join(uploadDir, facebookSquareFileName))
+    const facebookLandscapeBuffer = await image
+      .resize(1200, 630, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer()
+
+    const facebookSquareBuffer = await image
+      .resize(1080, 1080, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer()
+
+    const fbLandscapePath = `images/${businessId}/platform/fb_landscape_${fileId}.jpg`
+    const fbSquarePath = `images/${businessId}/platform/fb_square_${fileId}.jpg`
+
+    await bucket.file(fbLandscapePath).save(facebookLandscapeBuffer, {
+      metadata: { contentType: 'image/jpeg' },
+      public: true
+    })
+
+    await bucket.file(fbSquarePath).save(facebookSquareBuffer, {
+      metadata: { contentType: 'image/jpeg' },
+      public: true
+    })
 
     platformUrls.facebook = {
-      landscape: `/uploads/images/${businessId}/${facebookLandscapeFileName}`,
-      square: `/uploads/images/${businessId}/${facebookSquareFileName}`
+      landscape: `https://storage.googleapis.com/${bucketName}/${fbLandscapePath}`,
+      square: `https://storage.googleapis.com/${bucketName}/${fbSquarePath}`
     }
 
     // Instagram optimizations
-    const instagramSquareFileName = `ig_square_${fileId}.jpg`
-    const instagramPortraitFileName = `ig_portrait_${fileId}.jpg`
-    
-    await image.resize(1080, 1080, { fit: 'cover' }).jpeg({ quality: 85 })
-      .toFile(join(uploadDir, instagramSquareFileName))
-    
-    await image.resize(1080, 1350, { fit: 'cover' }).jpeg({ quality: 85 })
-      .toFile(join(uploadDir, instagramPortraitFileName))
+    const instagramSquareBuffer = await image
+      .resize(1080, 1080, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer()
+
+    const instagramPortraitBuffer = await image
+      .resize(1080, 1350, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer()
+
+    const igSquarePath = `images/${businessId}/platform/ig_square_${fileId}.jpg`
+    const igPortraitPath = `images/${businessId}/platform/ig_portrait_${fileId}.jpg`
+
+    await bucket.file(igSquarePath).save(instagramSquareBuffer, {
+      metadata: { contentType: 'image/jpeg' },
+      public: true
+    })
+
+    await bucket.file(igPortraitPath).save(instagramPortraitBuffer, {
+      metadata: { contentType: 'image/jpeg' },
+      public: true
+    })
 
     platformUrls.instagram = {
-      square: `/uploads/images/${businessId}/${instagramSquareFileName}`,
-      portrait: `/uploads/images/${businessId}/${instagramPortraitFileName}`
+      square: `https://storage.googleapis.com/${bucketName}/${igSquarePath}`,
+      portrait: `https://storage.googleapis.com/${bucketName}/${igPortraitPath}`
     }
 
     // Twitter optimizations
-    const twitterSingleFileName = `tw_single_${fileId}.jpg`
-    const twitterMultiFileName = `tw_multi_${fileId}.jpg`
-    
-    await image.resize(1200, 675, { fit: 'cover' }).jpeg({ quality: 85 })
-      .toFile(join(uploadDir, twitterSingleFileName))
-    
-    await image.resize(700, 800, { fit: 'cover' }).jpeg({ quality: 85 })
-      .toFile(join(uploadDir, twitterMultiFileName))
+    const twitterSingleBuffer = await image
+      .resize(1200, 675, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer()
+
+    const twitterMultiBuffer = await image
+      .resize(700, 800, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer()
+
+    const twSinglePath = `images/${businessId}/platform/tw_single_${fileId}.jpg`
+    const twMultiPath = `images/${businessId}/platform/tw_multi_${fileId}.jpg`
+
+    await bucket.file(twSinglePath).save(twitterSingleBuffer, {
+      metadata: { contentType: 'image/jpeg' },
+      public: true
+    })
+
+    await bucket.file(twMultiPath).save(twitterMultiBuffer, {
+      metadata: { contentType: 'image/jpeg' },
+      public: true
+    })
 
     platformUrls.twitter = {
-      single: `/uploads/images/${businessId}/${twitterSingleFileName}`,
-      multi: `/uploads/images/${businessId}/${twitterMultiFileName}`
+      single: `https://storage.googleapis.com/${bucketName}/${twSinglePath}`,
+      multi: `https://storage.googleapis.com/${bucketName}/${twMultiPath}`
     }
 
     // Google Business Profile optimization
-    const googleSquareFileName = `google_square_${fileId}.jpg`
-    
-    await image.resize(720, 720, { fit: 'cover' }).jpeg({ quality: 85 })
-      .toFile(join(uploadDir, googleSquareFileName))
+    const googleSquareBuffer = await image
+      .resize(720, 720, { fit: 'cover' })
+      .jpeg({ quality: 85 })
+      .toBuffer()
+
+    const googleSquarePath = `images/${businessId}/platform/google_square_${fileId}.jpg`
+
+    await bucket.file(googleSquarePath).save(googleSquareBuffer, {
+      metadata: { contentType: 'image/jpeg' },
+      public: true
+    })
 
     platformUrls.google = {
-      square: `/uploads/images/${businessId}/${googleSquareFileName}`
+      square: `https://storage.googleapis.com/${bucketName}/${googleSquarePath}`
     }
 
     // Generate AI tags and description using OpenAI Vision API
@@ -165,8 +242,8 @@ export async function POST(
           width: metadata.width,
           height: metadata.height
         },
-        cloudUrl: `/uploads/images/${businessId}/${fileName}`,
-        thumbnailUrl: `/uploads/images/${businessId}/${thumbnailFileName}`,
+        cloudUrl: originalUrl,
+        thumbnailUrl: thumbnailUrl,
         platformUrls,
         aiTags,
         aiConfidence: aiAnalysis.confidence,
@@ -246,8 +323,8 @@ TAGS: [tag1, tag2, tag3, etc]`
     const content = response.choices[0]?.message?.content || ''
     
     // Parse the response
-    const descriptionMatch = content.match(/DESCRIPTION:\s*(.+?)(?=\nTAGS:|$)/s)
-    const tagsMatch = content.match(/TAGS:\s*(.+?)$/s)
+    const descriptionMatch = content.match(/DESCRIPTION:\s*([\s\S]*?)(?=\nTAGS:|$)/)
+    const tagsMatch = content.match(/TAGS:\s*([\s\S]*?)$/)
     
     const description = descriptionMatch?.[1]?.trim() || 'Professional service industry image'
     const tagsString = tagsMatch?.[1]?.trim() || 'service, professional'

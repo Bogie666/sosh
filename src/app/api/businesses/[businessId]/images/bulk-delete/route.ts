@@ -1,151 +1,121 @@
 // src/app/api/businesses/[businessId]/images/bulk-delete/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { unlink } from 'fs/promises'
-import { join } from 'path'
+import { Storage } from '@google-cloud/storage'
 
-export async function DELETE(
+// Initialize Google Cloud Storage
+const storage = new Storage({
+  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+  credentials: process.env.GOOGLE_CLOUD_CREDENTIALS ? JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS) : undefined
+})
+
+const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET || 'sosh-images'
+const bucket = storage.bucket(bucketName)
+
+// POST - Bulk delete images
+export async function POST(
   request: NextRequest,
   { params }: { params: { businessId: string } }
 ) {
   try {
-    const businessId = params.businessId
-    const body = await request.json()
-    const { imageIds } = body
+    const { businessId } = params
+    const { imageIds } = await request.json()
 
     if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
       return NextResponse.json(
-        { success: false, error: 'Image IDs are required' },
+        { success: false, error: 'No image IDs provided' },
         { status: 400 }
       )
     }
 
-    // Get images to delete (for file cleanup)
-    const imagesToDelete = await prisma.imageLibrary.findMany({
-      where: {
+    // Get all images to delete (ensure they belong to this business)
+    const images = await prisma.imageLibrary.findMany({
+      where: { 
         id: { in: imageIds },
-        businessId
+        businessId: businessId
       }
     })
+
+    if (images.length === 0) {
+      return NextResponse.json(
+        { success: false, error: 'No valid images found' },
+        { status: 404 }
+      )
+    }
+
+    const deleteResults = {
+      totalRequested: imageIds.length,
+      validImages: images.length,
+      cloudStorageDeleted: 0,
+      databaseDeleted: 0,
+      errors: [] as string[]
+    }
+
+    // Delete from cloud storage
+    for (const image of images) {
+      try {
+        const fileName = image.fileName
+        const filePaths = [
+          `images/${businessId}/${fileName}`, // Original
+          `images/${businessId}/thumbs/thumb_${fileName.split('.')[0]}.jpg`, // Thumbnail
+          // Platform-specific versions
+          `images/${businessId}/facebook/fb_landscape_${fileName.split('.')[0]}.jpg`,
+          `images/${businessId}/facebook/fb_square_${fileName.split('.')[0]}.jpg`,
+          `images/${businessId}/instagram/ig_square_${fileName.split('.')[0]}.jpg`,
+          `images/${businessId}/instagram/ig_portrait_${fileName.split('.')[0]}.jpg`,
+          `images/${businessId}/twitter/tw_single_${fileName.split('.')[0]}.jpg`,
+          `images/${businessId}/google/gb_square_${fileName.split('.')[0]}.jpg`
+        ]
+
+        // Delete all versions (don't fail if some don't exist)
+        const deletePromises = filePaths.map(path => 
+          bucket.file(path).delete().catch(err => {
+            console.warn(`Warning: Could not delete ${path}:`, err.message)
+          })
+        )
+        
+        await Promise.allSettled(deletePromises)
+        deleteResults.cloudStorageDeleted++
+        
+      } catch (error) {
+        console.error(`Failed to delete cloud files for ${image.fileName}:`, error)
+        deleteResults.errors.push(`Cloud storage deletion failed for ${image.originalName}`)
+      }
+    }
 
     // Delete from database
-    const deleteResult = await prisma.imageLibrary.deleteMany({
-      where: {
-        id: { in: imageIds },
-        businessId
-      }
-    })
-
-    // Clean up files (best effort - don't fail if file deletion fails)
-    const uploadDir = join(process.cwd(), 'public', 'uploads', 'images', businessId)
-    
-    for (const image of imagesToDelete) {
-      try {
-        // Delete original file
-        await unlink(join(uploadDir, image.fileName))
-        
-        // Delete thumbnail
-        if (image.thumbnailUrl) {
-          const thumbnailFileName = image.thumbnailUrl.split('/').pop()
-          if (thumbnailFileName) {
-            await unlink(join(uploadDir, thumbnailFileName))
-          }
-        }
-        
-        // Delete platform optimized versions
-        if (image.platformUrls) {
-          for (const platform of Object.values(image.platformUrls) as any[]) {
-            for (const url of Object.values(platform) as string[]) {
-              const fileName = url.split('/').pop()
-              if (fileName) {
-                try {
-                  await unlink(join(uploadDir, fileName))
-                } catch (err) {
-                  // Ignore individual file deletion errors
-                }
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.warn(`Failed to delete files for image ${image.id}:`, err)
-      }
-    }
-
-    return NextResponse.json({
-      success: true,
-      deletedCount: deleteResult.count,
-      message: `Deleted ${deleteResult.count} image(s)`
-    })
-
-  } catch (error) {
-    console.error('Error deleting images:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete images' },
-      { status: 500 }
-    )
-  }
-}
-
-// src/app/api/businesses/[businessId]/images/bulk-tag/route.ts
-export async function PUT(
-  request: NextRequest,
-  { params }: { params: { businessId: string } }
-) {
-  try {
-    const businessId = params.businessId
-    const body = await request.json()
-    const { imageIds, tags } = body
-
-    if (!imageIds || !Array.isArray(imageIds) || imageIds.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Image IDs are required' },
-        { status: 400 }
-      )
-    }
-
-    if (!tags || !Array.isArray(tags) || tags.length === 0) {
-      return NextResponse.json(
-        { success: false, error: 'Tags are required' },
-        { status: 400 }
-      )
-    }
-
-    // Get current images
-    const currentImages = await prisma.imageLibrary.findMany({
-      where: {
-        id: { in: imageIds },
-        businessId
-      }
-    })
-
-    // Update each image with new tags
-    const updatePromises = currentImages.map(image => {
-      const existingTags = image.manualTags as string[]
-      const newTags = [...new Set([...existingTags, ...tags])] // Merge and deduplicate
-      
-      return prisma.imageLibrary.update({
-        where: { id: image.id },
-        data: { 
-          manualTags: newTags,
-          updatedAt: new Date()
+    try {
+      const dbResult = await prisma.imageLibrary.deleteMany({
+        where: { 
+          id: { in: images.map(img => img.id) },
+          businessId: businessId
         }
       })
-    })
+      
+      deleteResults.databaseDeleted = dbResult.count
+      
+    } catch (error) {
+      console.error('Database deletion failed:', error)
+      deleteResults.errors.push('Database deletion failed')
+    }
 
-    await Promise.all(updatePromises)
+    // Determine success status
+    const isSuccess = deleteResults.databaseDeleted > 0
+    const message = isSuccess 
+      ? `Successfully deleted ${deleteResults.databaseDeleted} image(s)`
+      : 'Failed to delete images'
 
     return NextResponse.json({
-      success: true,
-      updatedCount: currentImages.length,
-      message: `Added tags to ${currentImages.length} image(s)`
+      success: isSuccess,
+      message,
+      results: deleteResults
     })
 
   } catch (error) {
-    console.error('Error adding tags to images:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to add tags to images' },
-      { status: 500 }
-    )
+    console.error('Bulk delete failed:', error)
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Bulk delete failed'
+    }, { status: 500 })
   }
 }

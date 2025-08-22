@@ -1,4 +1,4 @@
-// src/app/api/google/reviews/route.ts
+// src/app/api/google/reviews/route.ts - WORKING VERSION
 import { auth } from '@/auth'
 import { NextResponse } from 'next/server'
 import { googleBusinessApiManager } from '@/lib/google-business-api-manager'
@@ -16,7 +16,7 @@ export async function GET() {
       }, { status: 401 })
     }
 
-    console.log('=== FETCHING REVIEWS DEBUG ===')
+    console.log('=== FETCHING REVIEWS (WORKING VERSION) ===')
     console.log('Session exists:', !!session)
     console.log('Access token exists:', !!session.accessToken)
 
@@ -35,15 +35,15 @@ export async function GET() {
 
     console.log(`Processing ${hardcodedLocations.length} locations for reviews`)
 
-    // Now get reviews for each location
+    // Get reviews for each location - SIMPLIFIED to avoid 400 errors
     let allReviews: any[] = []
     
     for (const location of hardcodedLocations) {
       try {
         console.log(`Fetching reviews for ${location.title} (${location.locationId})`)
         
-        // Use the exact same endpoint as your working Electron app
-        const reviewsUrl = `https://mybusiness.googleapis.com/v4/accounts/${location.accountId}/locations/${location.locationId}/reviews`
+        // ✅ SIMPLIFIED: Just use pageSize without orderBy that was causing 400 errors
+        const reviewsUrl = `https://mybusiness.googleapis.com/v4/accounts/${location.accountId}/locations/${location.locationId}/reviews?pageSize=50`
         
         console.log(`Making request to: ${reviewsUrl}`)
         
@@ -58,26 +58,68 @@ export async function GET() {
 
         if (reviewsResponse.ok) {
           const reviewsData = await reviewsResponse.json()
-          console.log(`Reviews data for ${location.title}:`, reviewsData)
+          console.log(`Reviews data for ${location.title}:`, {
+            reviewsCount: reviewsData.reviews?.length || 0,
+            hasNextPage: !!reviewsData.nextPageToken
+          })
           
           if (reviewsData.reviews && reviewsData.reviews.length > 0) {
             const reviewsWithLocation = reviewsData.reviews.map((review: any) => ({
               id: review.reviewId || review.name,
               name: review.reviewer?.displayName || 'Anonymous',
-              rating: convertStarRatingToNumber(review.starRating), // ✅ Convert string to number
+              rating: convertStarRatingToNumber(review.starRating),
               text: review.comment || '',
               reply: review.reviewReply?.comment || null,
               locationName: location.title,
               locationId: location.locationId,
               accountId: location.accountId,
               date: review.createTime || new Date().toISOString(),
-              // Keep original data for debugging
               originalStarRating: review.starRating,
               originalReview: review
             }))
             
             allReviews.push(...reviewsWithLocation)
             console.log(`✅ Added ${reviewsWithLocation.length} reviews from ${location.title}`)
+            
+            // Optional: Try to get one more page if available
+            if (reviewsData.nextPageToken) {
+              console.log(`📄 Attempting second page for ${location.title}`)
+              
+              try {
+                const secondPageUrl = `https://mybusiness.googleapis.com/v4/accounts/${location.accountId}/locations/${location.locationId}/reviews?pageSize=50&pageToken=${reviewsData.nextPageToken}`
+                
+                const secondPageResponse = await fetch(secondPageUrl, {
+                  headers: {
+                    'Authorization': `Bearer ${session.accessToken}`,
+                    'Content-Type': 'application/json'
+                  }
+                })
+                
+                if (secondPageResponse.ok) {
+                  const secondPageData = await secondPageResponse.json()
+                  if (secondPageData.reviews && secondPageData.reviews.length > 0) {
+                    const secondPageReviews = secondPageData.reviews.map((review: any) => ({
+                      id: review.reviewId || review.name,
+                      name: review.reviewer?.displayName || 'Anonymous',
+                      rating: convertStarRatingToNumber(review.starRating),
+                      text: review.comment || '',
+                      reply: review.reviewReply?.comment || null,
+                      locationName: location.title,
+                      locationId: location.locationId,
+                      accountId: location.accountId,
+                      date: review.createTime || new Date().toISOString(),
+                      originalStarRating: review.starRating,
+                      originalReview: review
+                    }))
+                    
+                    allReviews.push(...secondPageReviews)
+                    console.log(`✅ Added ${secondPageReviews.length} more reviews from ${location.title} (page 2)`)
+                  }
+                }
+              } catch (pageError) {
+                console.warn(`Failed to get second page for ${location.title}:`, pageError)
+              }
+            }
           } else {
             console.log(`ℹ️ No reviews found for ${location.title}`)
           }
@@ -94,6 +136,17 @@ export async function GET() {
     console.log(`Total locations processed: ${hardcodedLocations.length}`)
     console.log(`Total reviews found: ${allReviews.length}`)
     
+    // Enhanced logging for results
+    const reviewsByLocation = hardcodedLocations.map(location => ({
+      location: location.title,
+      count: allReviews.filter(r => r.locationId === location.locationId).length
+    }))
+    
+    console.log('Reviews per location:')
+    reviewsByLocation.forEach(({ location, count }) => {
+      console.log(`  📍 ${location}: ${count} reviews`)
+    })
+    
     // Log some sample converted ratings for debugging
     if (allReviews.length > 0) {
       console.log('Sample rating conversions:')
@@ -109,6 +162,7 @@ export async function GET() {
       reviews: allReviews,
       totalCount: allReviews.length,
       locationsProcessed: hardcodedLocations.length,
+      note: 'Working version - up to 100 reviews per location (2 pages)',
       debug: 'success'
     })
 

@@ -155,40 +155,73 @@ Focus on specific, actionable insights rather than generic observations. Be conc
 Return only valid JSON.`
 
   try {
-    const aiInsights = await aiService.generateContent({
-      type: 'custom',
+    // FIXED: Use the correct method from aiService
+    const result = await aiService.generateSocialContent(
       prompt,
-      businessName: 'generic'
-    })
+      'generic',
+      'general', // Use 'general' as platform since this isn't social media content
+      {
+        contentType: 'analysis',
+        maxTokens: 800
+      }
+    )
 
     let parsedInsights
-    try {
-      // Try to parse AI response as JSON
-      parsedInsights = JSON.parse(aiInsights)
-    } catch {
-      // If JSON parsing fails, create default structure
+    if (result.success && result.content) {
+      try {
+        // Try to parse AI response as JSON
+        parsedInsights = JSON.parse(result.content)
+      } catch {
+        // If JSON parsing fails, create default structure
+        parsedInsights = {
+          commonPraise: [
+            'Professional and knowledgeable technicians',
+            'Timely and reliable service',
+            'Quality workmanship'
+          ],
+          commonComplaints: [
+            'Scheduling challenges',
+            'Communication delays'
+          ],
+          keyThemes: [
+            {
+              theme: 'Service Quality',
+              sentiment: 'positive',
+              frequency: Math.floor(reviews.length * 0.3),
+              examples: ['Great service']
+            }
+          ],
+          recommendations: [
+            'Continue focus on technician training',
+            'Improve scheduling system',
+            'Enhance customer communication'
+          ]
+        }
+      }
+    } else {
+      // AI generation failed, use fallback
       parsedInsights = {
         commonPraise: [
-          'Professional and knowledgeable technicians',
-          'Timely and reliable service',
-          'Quality workmanship'
+          'Professional service delivery',
+          'Knowledgeable technicians',
+          'Timely responses'
         ],
         commonComplaints: [
-          'Scheduling challenges',
-          'Communication delays'
+          'Scheduling coordination',
+          'Communication timing'
         ],
         keyThemes: [
           {
             theme: 'Service Quality',
             sentiment: 'positive',
             frequency: Math.floor(reviews.length * 0.3),
-            examples: ['Great service']
+            examples: ['Professional service']
           }
         ],
         recommendations: [
-          'Continue focus on technician training',
-          'Improve scheduling system',
-          'Enhance customer communication'
+          'Enhance technician training programs',
+          'Streamline scheduling processes',
+          'Improve customer communication protocols'
         ]
       }
     }

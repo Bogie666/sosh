@@ -122,57 +122,64 @@ const MONTHLY_SPECIALS_TEMPLATES = {
       'Heat tune-up package - $49'
     ],
     plumbing: [
-      'Free fire pit/grill gas line with installation',
-      'Fall plumbing maintenance package'
+      'Fall plumbing inspection - 25% off',
+      'Water heater service special'
     ],
     electrical: [
-      'Fall electrical safety inspection',
-      'Outdoor holiday lighting prep - 25% off'
+      'Electrical panel safety check',
+      'Fall lighting upgrades - 20% off'
     ]
   },
-  9: { // October - Early Bird Winter Prep
+  9: { // October - Halloween Savings
     hvac: [
-      'Furnace cleaning kit - $750 off (reg $2240)',
-      'CO detector replacement with filtration purchase'
+      'Scary good deals on system replacements',
+      'Pre-winter heating system check - $89'
     ],
     plumbing: [
-      '$200 off new power flush toilet',
-      'Winter pipe protection service'
+      'Prevent frozen pipes - Insulation special',
+      'Water heater maintenance package'
     ],
     electrical: [
-      'Free outdoor circuit with permanent LED lighting',
-      'Winter electrical safety check'
+      'Generator installation before winter storms',
+      'Outdoor holiday lighting setup'
     ]
   },
-  10: { // November - Thanks & Giving
+  10: { // November - Thanksgiving Specials
     hvac: [
-      'Black Friday system special - 30% off',
-      'Free outdoor unit with indoor equipment purchase'
+      'Thankful for savings - 15% off heating repairs',
+      'Holiday hosting special - Free air filter upgrade'
     ],
     plumbing: [
-      'Thanksgiving plumbing special - Disposal $450',
-      'Holiday guest prep plumbing package'
+      'Thanksgiving prep - Garbage disposal service',
+      'Water heater check before holiday guests'
     ],
     electrical: [
-      'Holiday lighting installation special',
-      'Thanksgiving electrical safety check'
+      'Holiday electrical safety inspection',
+      'Outlet upgrades for holiday decorations'
     ]
   },
-  11: { // December - Holiday Home Comfort
-    all: [
-      'Year-end clearance - Up to 30% off all repairs',
-      'Holiday emergency service - Same pricing',
-      'New Year prep maintenance packages'
+  11: { // December - Holiday Specials
+    hvac: [
+      'Gift yourself comfort - New system financing',
+      'Holiday heating special - $99 service call'
+    ],
+    plumbing: [
+      'Holiday plumbing emergencies - Same day service',
+      'New Year, new water heater - Special pricing'
+    ],
+    electrical: [
+      'Holiday lighting installation',
+      'Electrical safety for the holidays'
     ]
   }
-}
+} as const
 
 export async function POST(
   request: Request,
   { params }: { params: { businessId: string } }
 ) {
   try {
-    const { businessId } = params
+    const businessId = params.businessId
     const { year } = await request.json()
 
     // Verify business exists
@@ -187,7 +194,7 @@ export async function POST(
       }, { status: 404 })
     }
 
-    // Get existing specials to avoid duplicates
+    // Check which monthly specials already exist
     const existingSpecials = await prisma.monthlySpecial.findMany({
       where: {
         businessId,
@@ -206,11 +213,30 @@ export async function POST(
 
       const template = MONTHLY_SPECIALS_TEMPLATES[month as keyof typeof MONTHLY_SPECIALS_TEMPLATES]
       
-      // Customize template based on business type
-      let hvacSpecials = template.hvac || []
-      let plumbingSpecials = template.plumbing || []
-      let electricalSpecials = template.electrical || []
-      let allSpecials = template.all || []
+      // FIXED: Add null checking and use Array.isArray to ensure we have arrays
+      if (!template) {
+        console.warn(`No template found for month ${month}`)
+        continue
+      }
+
+      let hvacSpecials: string[] = []
+      let plumbingSpecials: string[] = []
+      let electricalSpecials: string[] = []
+      let allSpecials: string[] = []
+
+      // Type-safe property access with explicit array checking
+      if ('hvac' in template && Array.isArray(template.hvac)) {
+        hvacSpecials = [...template.hvac]
+      }
+      if ('plumbing' in template && Array.isArray(template.plumbing)) {
+        plumbingSpecials = [...template.plumbing]
+      }
+      if ('electrical' in template && Array.isArray(template.electrical)) {
+        electricalSpecials = [...template.electrical]
+      }
+      if ('all' in template && Array.isArray(template.all)) {
+        allSpecials = [...template.all]
+      }
 
       // Filter specials based on business type
       if (business.type === 'hvac') {

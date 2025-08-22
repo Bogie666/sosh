@@ -37,7 +37,7 @@ export class GoogleBusinessService {
 
       return {
         success: true,
-        locations: allLocations.map(this.formatLocationForUI),
+        locations: allLocations.map((location) => this.formatLocationForUI(location)),
         totalCount: allLocations.length
       }
     } catch (error) {
@@ -46,6 +46,34 @@ export class GoogleBusinessService {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to fetch locations'
       }
+    }
+  }
+
+  /**
+   * Clean up temporary file from cloud storage
+   */
+  private async cleanupTempFile(fileName?: string): Promise<void> {
+    if (!fileName) return
+    
+    try {
+      console.log(`🗑️ Cleaning up temp file: ${fileName}`)
+      
+      const response = await fetch('/api/cleanup-temp-image', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ fileName })
+      })
+      
+      if (response.ok) {
+        console.log(`✅ Temp file cleaned up: ${fileName}`)
+      } else {
+        console.warn(`⚠️ Failed to cleanup temp file: ${fileName}`)
+      }
+    } catch (error) {
+      // Don't throw - cleanup failure shouldn't break the main flow
+      console.warn('Cleanup error:', error)
     }
   }
 
@@ -155,21 +183,182 @@ export class GoogleBusinessService {
     }
   }
 
-  async createPost(accountId: string, locationId: string, postData: any) {
+  /**
+   * Upload media to Google Business Profile using source URL approach
+   */
+  async uploadMedia(accountId: string, locationId: string, imageFile: File): Promise<any> {
     try {
+      console.log(`🖼️ Uploading media to GBP for location: ${locationId}`)
+      
+      // First, upload image to cloud storage to get a public URL
+      const cloudUploadResult = await this.uploadToCloudStorage(imageFile)
+      
+      if (!cloudUploadResult.success) {
+        throw new Error(`Cloud storage upload failed: ${cloudUploadResult.error}`)
+      }
+      
+      console.log(`📁 Image uploaded to cloud storage: ${cloudUploadResult.publicUrl}`)
+      
+      // Now create the media using the public URL
+      const mediaData = {
+        locationAssociation: {
+          category: 'ADDITIONAL'  // Perfect for promotional posts
+        },
+        sourceUrl: cloudUploadResult.publicUrl,
+        mediaFormat: 'PHOTO'
+      }
+      
+      console.log(`📤 Sending media data to GBP:`, mediaData)
+      
+      const uploadUrl = `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/media`
+      
+      const response = await fetch(uploadUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.oauth2Client.credentials.access_token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(mediaData)
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Media upload failed: ${response.status} - ${errorText}`)
+      }
+
+      const result = await response.json()
+      console.log(`✅ Media uploaded successfully to GBP:`, result)
+      
+      // Clean up temp file after successful upload
+      await this.cleanupTempFile(cloudUploadResult.fileName)
+      
+      return {
+        success: true,
+        mediaName: result.name,
+        googleUrl: result.googleUrl || cloudUploadResult.publicUrl,
+        data: result
+      }
+    } catch (error) {
+      console.error('Media upload error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to upload media'
+      }
+    }
+  }
+
+  /**
+   * Helper method to upload image to cloud storage first
+   */
+  private async uploadToCloudStorage(imageFile: File): Promise<{success: boolean, publicUrl?: string, fileName?: string, error?: string}> {
+    try {
+      console.log(`☁️ Uploading ${imageFile.name} to cloud storage...`)
+      
+      // Import cloud storage directly instead of internal API call
+      const { Storage } = await import('@google-cloud/storage')
+      const { v4: uuidv4 } = await import('uuid')
+      
+      const storage = new Storage({
+        projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+        credentials: process.env.GOOGLE_CLOUD_CREDENTIALS ? JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS) : undefined
+      })
+      
+      const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET || 'sosh-images'
+      const bucket = storage.bucket(bucketName)
+      
+      // Generate unique filename
+      const fileId = uuidv4()
+      const extension = imageFile.name.split('.').pop() || 'jpg'
+      const fileName = `temp/gbp/gbp-temp_${fileId}.${extension}`
+      
+      // Convert File to buffer
+      const fileBuffer = Buffer.from(await imageFile.arrayBuffer())
+      
+      // Upload to cloud storage
+      const cloudFile = bucket.file(fileName)
+      await cloudFile.save(fileBuffer, {
+        metadata: {
+          contentType: imageFile.type || 'image/jpeg'
+        },
+        public: true // Critical: Make sure it's publicly accessible for GBP
+      })
+      
+      // Generate public URL
+      const publicUrl = `https://storage.googleapis.com/${bucketName}/${fileName}`
+      
+      console.log(`✅ Temp image uploaded directly: ${publicUrl}`)
+      
+      return {
+        success: true,
+        publicUrl: publicUrl,
+        fileName: fileName
+      }
+      
+    } catch (error) {
+      console.error('Direct cloud upload error:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Cloud upload failed'
+      }
+    }
+  }
+
+  /**
+   * Create a post with optional media support
+   */
+  async createPost(accountId: string, locationId: string, postData: any, images?: File[]): Promise<any> {
+    try {
+      console.log(`📝 Creating GBP post for location: ${locationId}`)
+      
+      let mediaItems: any[] = []
+      
+      // Upload images if provided
+      if (images && images.length > 0) {
+        console.log(`📸 Uploading ${images.length} images to Google Business Profile...`)
+        
+        for (const image of images) {
+          const mediaResult = await this.uploadMedia(accountId, locationId, image)
+          
+          if (mediaResult.success) {
+            mediaItems.push({
+              mediaFormat: 'PHOTO',
+              sourceUrl: mediaResult.googleUrl
+            })
+            console.log(`✅ Added media to post: ${image.name}`)
+          } else {
+            console.error(`❌ Failed to upload media: ${image.name}`, mediaResult.error)
+            // Continue with other images rather than failing completely
+          }
+        }
+      }
+      
+      // Enhanced post data with media
+      const enhancedPostData = {
+        ...postData,
+        media: mediaItems.length > 0 ? mediaItems : undefined
+      }
+      
+      console.log('Creating post with data:', {
+        ...enhancedPostData,
+        media: enhancedPostData.media ? `${enhancedPostData.media.length} media items` : 'none'
+      })
+      
+      // Create the post
       const url = `https://mybusiness.googleapis.com/v4/accounts/${accountId}/locations/${locationId}/localPosts`
       
       const response = await this.makeApiRequest(url, {
         method: 'POST',
-        body: JSON.stringify(postData)
+        body: JSON.stringify(enhancedPostData)
       })
 
       return {
         success: true,
-        post: response
+        post: response,
+        hasImages: mediaItems.length > 0,
+        mediaCount: mediaItems.length
       }
     } catch (error) {
-      console.error('Error creating post:', error)
+      console.error('Error creating GBP post:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to create post'
@@ -231,11 +420,17 @@ export class GoogleBusinessService {
   }
 }
 
-export function formatPostForGBP(content: string, postType: string) {
+// Enhanced formatPostForGBP function with media support
+export function formatPostForGBP(content: string, postType: string, mediaItems?: any[]) {
   const postData: any = {
     languageCode: 'en-US',
     summary: content,
     topicType: 'STANDARD'
+  }
+  
+  // Add media if provided
+  if (mediaItems && mediaItems.length > 0) {
+    postData.media = mediaItems
   }
   
   switch (postType) {

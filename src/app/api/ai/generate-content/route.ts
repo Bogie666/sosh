@@ -2,6 +2,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { aiService } from '@/lib/ai-service'
 
+// Helper function to determine current season (Dallas, TX climate)
+function getCurrentSeason(month: number): string {
+  if (month >= 2 && month <= 4) return 'Spring' // March-May: Mild, unpredictable
+  if (month >= 5 && month <= 9) return 'Summer' // June-October: Hot and humid
+  if (month >= 10 && month <= 11) return 'Fall' // November-December: Pleasant
+  return 'Winter' // January-February: Mild winter
+}
+
 export async function POST(request: NextRequest) {
   try {
     if (!aiService.isConfigured()) {
@@ -91,7 +99,7 @@ export async function POST(request: NextRequest) {
 // Enhanced GET request for available templates and platform info
 export async function GET() {
   try {
-    const currentSeason = aiService.getCurrentSeason()
+    const currentSeason = getCurrentSeason(new Date().getMonth())
     
     const availableTemplates = [
       {

@@ -1,21 +1,31 @@
 // src/app/api/businesses/[businessId]/images/[imageId]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { Storage } from '@google-cloud/storage'
 
-// PUT - Update individual image
-export async function PUT(
+// Initialize Google Cloud Storage
+const storage = new Storage({
+  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
+  credentials: process.env.GOOGLE_CLOUD_CREDENTIALS ? JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS) : undefined
+})
+
+const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET || 'sosh-images'
+const bucket = storage.bucket(bucketName)
+
+// PATCH - Update image metadata (tags, category, etc.)
+export async function PATCH(
   request: NextRequest,
   { params }: { params: { businessId: string; imageId: string } }
 ) {
   try {
     const { businessId, imageId } = params
-    const body = await request.json()
+    const updates = await request.json()
 
-    // Verify image belongs to business
-    const existingImage = await prisma.imageLibrary.findFirst({
-      where: {
+    // Verify image exists and belongs to this business
+    const existingImage = await prisma.imageLibrary.findUnique({
+      where: { 
         id: imageId,
-        businessId
+        businessId: businessId
       }
     })
 
@@ -27,60 +37,53 @@ export async function PUT(
     }
 
     // Prepare update data
-    const updateData: any = {
-      updatedAt: new Date()
+    const updateData: any = {}
+
+    if (updates.manualTags !== undefined) {
+      updateData.manualTags = Array.isArray(updates.manualTags) 
+        ? updates.manualTags.filter(Boolean) 
+        : []
     }
 
-    if (body.category !== undefined) {
-      updateData.category = body.category
+    if (updates.aiTags !== undefined) {
+      updateData.aiTags = Array.isArray(updates.aiTags) 
+        ? updates.aiTags.filter(Boolean) 
+        : []
     }
 
-    if (body.subcategory !== undefined) {
-      updateData.subcategory = body.subcategory
+    if (updates.category !== undefined) {
+      updateData.category = updates.category || null
     }
 
-    if (body.manualTags !== undefined) {
-      updateData.manualTags = body.manualTags
+    if (updates.subcategory !== undefined) {
+      updateData.subcategory = updates.subcategory || null
     }
 
-    if (body.isActive !== undefined) {
-      updateData.isActive = body.isActive
-    }
-
-    if (body.location !== undefined) {
-      updateData.location = body.location
-    }
-
-    if (body.workOrder !== undefined) {
-      updateData.workOrder = body.workOrder
-    }
-
-    if (body.customer !== undefined) {
-      updateData.customer = body.customer
-    }
-
-    // Update the image
+    // Update in database
     const updatedImage = await prisma.imageLibrary.update({
       where: { id: imageId },
-      data: updateData
+      data: {
+        ...updateData,
+        updatedAt: new Date()
+      }
     })
 
     return NextResponse.json({
       success: true,
-      image: updatedImage,
-      message: 'Image updated successfully'
+      message: 'Image updated successfully',
+      image: updatedImage
     })
 
   } catch (error) {
-    console.error('Error updating image:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to update image' },
-      { status: 500 }
-    )
+    console.error('Failed to update image:', error)
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to update image'
+    }, { status: 500 })
   }
 }
 
-// DELETE - Delete individual image
+// DELETE - Remove image from both database and cloud storage
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { businessId: string; imageId: string } }
@@ -88,11 +91,11 @@ export async function DELETE(
   try {
     const { businessId, imageId } = params
 
-    // Get image details for file cleanup
-    const image = await prisma.imageLibrary.findFirst({
-      where: {
+    // Get image details from database
+    const image = await prisma.imageLibrary.findUnique({
+      where: { 
         id: imageId,
-        businessId
+        businessId: businessId // Ensure user can only delete their business images
       }
     })
 
@@ -101,6 +104,40 @@ export async function DELETE(
         { success: false, error: 'Image not found' },
         { status: 404 }
       )
+    }
+
+    // Delete from cloud storage
+    try {
+      // Extract the file path from the cloud URL
+      const fileName = image.fileName
+      const originalPath = `images/${businessId}/${fileName}`
+      const thumbnailPath = `images/${businessId}/thumbs/thumb_${fileName.split('.')[0]}.jpg`
+      
+      // Delete original image
+      await bucket.file(originalPath).delete()
+      
+      // Delete thumbnail
+      await bucket.file(thumbnailPath).delete()
+      
+      // Delete platform-specific versions if they exist
+      const platformPaths = [
+        `images/${businessId}/facebook/fb_landscape_${fileName.split('.')[0]}.jpg`,
+        `images/${businessId}/facebook/fb_square_${fileName.split('.')[0]}.jpg`,
+        `images/${businessId}/instagram/ig_square_${fileName.split('.')[0]}.jpg`,
+        `images/${businessId}/instagram/ig_portrait_${fileName.split('.')[0]}.jpg`,
+        `images/${businessId}/twitter/tw_single_${fileName.split('.')[0]}.jpg`,
+        `images/${businessId}/google/gb_square_${fileName.split('.')[0]}.jpg`
+      ]
+      
+      // Delete platform versions (don't fail if they don't exist)
+      await Promise.allSettled(
+        platformPaths.map(path => bucket.file(path).delete())
+      )
+      
+      console.log(`✅ Deleted cloud storage files for ${fileName}`)
+    } catch (storageError) {
+      console.warn('Warning: Failed to delete some cloud storage files:', storageError)
+      // Continue with database deletion even if cloud deletion fails
     }
 
     // Delete from database
@@ -108,103 +145,16 @@ export async function DELETE(
       where: { id: imageId }
     })
 
-    // Clean up files (best effort)
-    try {
-      const { unlink } = await import('fs/promises')
-      const { join } = await import('path')
-      
-      const uploadDir = join(process.cwd(), 'public', 'uploads', 'images', businessId)
-      
-      // Delete original file
-      await unlink(join(uploadDir, image.fileName))
-      
-      // Delete thumbnail
-      if (image.thumbnailUrl) {
-        const thumbnailFileName = image.thumbnailUrl.split('/').pop()
-        if (thumbnailFileName) {
-          await unlink(join(uploadDir, thumbnailFileName))
-        }
-      }
-      
-      // Delete platform optimized versions
-      if (image.platformUrls) {
-        for (const platform of Object.values(image.platformUrls) as any[]) {
-          for (const url of Object.values(platform) as string[]) {
-            const fileName = url.split('/').pop()
-            if (fileName) {
-              try {
-                await unlink(join(uploadDir, fileName))
-              } catch (err) {
-                // Ignore individual file deletion errors
-              }
-            }
-          }
-        }
-      }
-    } catch (err) {
-      console.warn(`Failed to delete files for image ${imageId}:`, err)
-    }
-
     return NextResponse.json({
       success: true,
       message: 'Image deleted successfully'
     })
 
   } catch (error) {
-    console.error('Error deleting image:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to delete image' },
-      { status: 500 }
-    )
-  }
-}
-
-// GET - Get individual image details
-export async function GET(
-  request: NextRequest,
-  { params }: { params: { businessId: string; imageId: string } }
-) {
-  try {
-    const { businessId, imageId } = params
-
-    const image = await prisma.imageLibrary.findFirst({
-      where: {
-        id: imageId,
-        businessId,
-        isActive: true
-      }
-    })
-
-    if (!image) {
-      return NextResponse.json(
-        { success: false, error: 'Image not found' },
-        { status: 404 }
-      )
-    }
-
-    // Increment usage count
-    await prisma.imageLibrary.update({
-      where: { id: imageId },
-      data: { 
-        usageCount: image.usageCount + 1,
-        lastUsed: new Date()
-      }
-    })
-
+    console.error('Failed to delete image:', error)
     return NextResponse.json({
-      success: true,
-      image: {
-        ...image,
-        usageCount: image.usageCount + 1,
-        lastUsed: new Date()
-      }
-    })
-
-  } catch (error) {
-    console.error('Error fetching image:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to fetch image' },
-      { status: 500 }
-    )
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete image'
+    }, { status: 500 })
   }
 }

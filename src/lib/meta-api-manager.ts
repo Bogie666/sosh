@@ -148,57 +148,102 @@ class MetaApiManager {
   /**
    * Post to Facebook page
    */
-  async postToFacebook(businessName: string, content: string, options: MetaPostOptions = {}): Promise<MetaApiResponse> {
-    try {
-      // Map business names to actual page IDs and get page-specific tokens
-      const pageMapping: Record<string, { pageId: string, needsPageToken: boolean }> = {
-        'lex-dallas': { pageId: '117276454970502', needsPageToken: true },  // Lex Air Conditioning and Heating
-        'lex': { pageId: '117276454970502', needsPageToken: true },         // Same as lex-dallas
-        'lex-etx': { pageId: '104687012905700', needsPageToken: true },     // Lex ETX
-        'lyons': { pageId: '172733356071633', needsPageToken: true }        // Lyons Air & Heat
-      }
+  async postToFacebook(businessName: string, content: string, options: MetaPostOptions = {}, imageFile?: File): Promise<MetaApiResponse> {
+  try {
+    // Map business names to actual page IDs and get page-specific tokens
+    const pageMapping: Record<string, { pageId: string, needsPageToken: boolean }> = {
+      'lex-dallas': { pageId: '117276454970502', needsPageToken: true },  // Lex Air Conditioning and Heating
+      'lex': { pageId: '117276454970502', needsPageToken: true },         // Same as lex-dallas
+      'lex-etx': { pageId: '104687012905700', needsPageToken: true },     // Lex ETX
+      'lyons': { pageId: '172733356071633', needsPageToken: true }        // Lyons Air & Heat
+    }
 
-      const pageInfo = pageMapping[businessName.toLowerCase()]
+    const pageInfo = pageMapping[businessName.toLowerCase()]
+    
+    if (!pageInfo) {
+      return {
+        success: false,
+        error: `Facebook page not found for business: ${businessName}. Available: ${Object.keys(pageMapping).join(', ')}`
+      }
+    }
+
+    console.log(`Posting to Facebook page ${pageInfo.pageId} for business: ${businessName}`)
+
+    // Get page-specific access token
+    let pageAccessToken = this.accessToken
+    
+    if (pageInfo.needsPageToken) {
+      console.log('Getting page-specific access token...')
+      try {
+        const pagesResponse = await fetch(`${this.baseUrl}/me/accounts?access_token=${this.accessToken}`)
+        const pagesData = await pagesResponse.json()
+        
+        if (pagesData.data) {
+          const page = pagesData.data.find((p: any) => p.id === pageInfo.pageId)
+          if (page && page.access_token) {
+            pageAccessToken = page.access_token
+            console.log('Found page-specific access token')
+          } else {
+            console.log('No page-specific token found, using user token')
+          }
+        }
+      } catch (tokenError) {
+        console.log('Failed to get page token, using user token:', tokenError)
+      }
+    }
+
+    // Handle image posting vs text-only posting
+    if (imageFile) {
+      console.log(`📸 Posting with image: ${imageFile.name} (${imageFile.size} bytes)`)
       
-      if (!pageInfo) {
+      // Create FormData for image upload
+      const formData = new FormData()
+      formData.append('source', imageFile)
+      formData.append('message', content)
+      formData.append('access_token', pageAccessToken)
+      
+      // Add any additional options
+      Object.keys(options).forEach(key => {
+        if (key !== 'message') {
+          formData.append(key, String(options[key as keyof MetaPostOptions]))
+        }
+      })
+
+      console.log('Uploading image to Facebook...')
+
+      const response = await fetch(
+        `${this.baseUrl}/${pageInfo.pageId}/photos`,
+        {
+          method: 'POST',
+          body: formData
+        }
+      )
+
+      const data = await response.json()
+      console.log('Facebook photo API response:', data)
+
+      if (data.error) {
         return {
           success: false,
-          error: `Facebook page not found for business: ${businessName}. Available: ${Object.keys(pageMapping).join(', ')}`
+          error: `Facebook Photo Post Error: ${data.error.message} (Code: ${data.error.code})`
         }
       }
 
-      console.log(`Posting to Facebook page ${pageInfo.pageId} for business: ${businessName}`)
-
-      // Get page-specific access token
-      let pageAccessToken = this.accessToken
-      
-      if (pageInfo.needsPageToken) {
-        console.log('Getting page-specific access token...')
-        try {
-          const pagesResponse = await fetch(`${this.baseUrl}/me/accounts?access_token=${this.accessToken}`)
-          const pagesData = await pagesResponse.json()
-          
-          if (pagesData.data) {
-            const page = pagesData.data.find((p: any) => p.id === pageInfo.pageId)
-            if (page && page.access_token) {
-              pageAccessToken = page.access_token
-              console.log('Found page-specific access token')
-            } else {
-              console.log('No page-specific token found, using user token')
-            }
-          }
-        } catch (tokenError) {
-          console.log('Failed to get page token, using user token:', tokenError)
-        }
+      return {
+        success: true,
+        postId: data.id,
+        data: data
       }
 
+    } else {
+      // Text-only post (existing logic)
       const postData = {
         message: content,
         access_token: pageAccessToken,
         ...options
       }
 
-      console.log('Posting with data:', { ...postData, access_token: '[HIDDEN]' })
+      console.log('Posting text-only content to Facebook...')
 
       const response = await fetch(
         `${this.baseUrl}/${pageInfo.pageId}/feed`,
@@ -226,14 +271,15 @@ class MetaApiManager {
         postId: data.id,
         data: data
       }
-    } catch (error) {
-      console.error('Facebook posting error:', error)
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to post to Facebook'
-      }
+    }
+  } catch (error) {
+    console.error('Facebook posting error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to post to Facebook'
     }
   }
+}
 
   /**
    * Post to Instagram (requires Facebook page connection)

@@ -5,7 +5,7 @@ import Header from '@/components/Header'
 import BusinessProfileManager from '@/components/settings/BusinessProfileManager'
 import ContentBlocksManager from '@/components/settings/ContentBlocksManager'
 import MonthlySpecialsManager from '@/components/settings/MonthlySpecialsManager'
-import TemplatePreferences from '@/components/settings/TemplatePreferences'
+import DailyThemeStrategy from '@/components/settings/DailyThemeStrategy'
 import ImageLibraryManager from '@/components/settings/ImageLibraryManager'
 
 export default async function SettingsPage() {
@@ -26,7 +26,7 @@ export default async function SettingsPage() {
             <div>
               <h1 className="text-3xl font-bold text-dark-text mb-2">⚙️ Settings</h1>
               <p className="text-dark-text-muted">
-                Manage your business profiles, content blocks, and automation settings
+                Manage your business profiles, content strategy, and automation settings
               </p>
             </div>
             <a 
@@ -39,7 +39,7 @@ export default async function SettingsPage() {
         </div>
 
         <main className="space-y-8">
-          {/* Content Blocks Library (now includes evergreen setup) */}
+          {/* Content Blocks Library */}
           <section>
             <ContentBlocksManager />
           </section>
@@ -49,14 +49,14 @@ export default async function SettingsPage() {
             <BusinessProfileManager />
           </section>
 
-          {/* Enhanced Monthly Specials */}
+          {/* Monthly Specials */}
           <section>
             <MonthlySpecialsManager />
           </section>
 
-          {/* Template Preferences */}
+          {/* NEW: Daily Theme Strategy (replaces Template Preferences) */}
           <section>
-            <TemplatePreferences />
+            <DailyThemeStrategy />
           </section>
 
           {/* Image Library Manager */}

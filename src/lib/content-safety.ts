@@ -141,12 +141,12 @@ export class ContentSafetyService {
       id: business.id,
       name: business.name,
       displayName: business.displayName,
-      phone: business.phone,
-      website: business.website,
+      phone: business.phone || undefined,
+      website: business.website || undefined,
       businessProfile: business.businessProfile ? {
         brandVoice: business.businessProfile.brandVoice || '',
-        emergencyContact: business.businessProfile.emergencyContact,
-        licenseInfo: business.businessProfile.licenseInfo
+        emergencyContact: business.businessProfile.emergencyContact || undefined,
+        licenseInfo: business.businessProfile.licenseInfo || undefined
       } : undefined,
       contentBlocks: business.contentBlocks.map(block => ({
         shortCode: block.shortCode || '',
