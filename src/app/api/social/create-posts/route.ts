@@ -11,10 +11,11 @@ async function uploadTempImageForInstagram(imageBuffer: Buffer, originalName: st
   try {
     const { Storage } = await import('@google-cloud/storage')
     const { v4: uuidv4 } = await import('uuid')
+    const { getGoogleCredentials } = await import('@/lib/google-credentials')
     
     const storage = new Storage({
       projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-      credentials: process.env.GOOGLE_CLOUD_CREDENTIALS ? JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS) : undefined
+      credentials: getGoogleCredentials() || undefined
     })
     
     const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET || 'sosh-images'

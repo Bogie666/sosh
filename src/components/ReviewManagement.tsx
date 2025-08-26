@@ -341,23 +341,33 @@ export default function ReviewManagement() {
   }, [])
 
   const loadLocations = async () => {
-    setLoadingLocations(true)
-    try {
-      const response = await fetch('/api/google/locations')
-      const data = await response.json()
-      
-      if (data.success && data.locations) {
-        setLocations(data.locations)
-        console.log('Loaded locations:', data.locations)
-      } else {
-        console.error('Failed to load locations:', data.error)
+  setLoadingLocations(true)
+  try {
+    // Add cache-busting to prevent stale responses
+    const response = await fetch('/api/google/locations', {
+      method: 'GET',
+      cache: 'no-cache',
+      headers: {
+        'Cache-Control': 'no-cache, no-store, must-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
       }
-    } catch (error) {
-      console.error('Failed to load locations:', error)
-    } finally {
-      setLoadingLocations(false)
+    })
+    
+    const data = await response.json()
+    
+    if (data.success && data.locations) {
+      setLocations(data.locations)
+      console.log('Loaded locations:', data.locations)
+    } else {
+      console.error('Failed to load locations:', data.error)
     }
+  } catch (error) {
+    console.error('Failed to load locations:', error)
+  } finally {
+    setLoadingLocations(false)
   }
+}
 
   const loadReviews = async () => {
     setLoading(true)

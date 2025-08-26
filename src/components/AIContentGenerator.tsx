@@ -1,4 +1,4 @@
-// src/components/AIContentGenerator.tsx - FIXED VERSION WITH IMAGE IMPROVEMENTS
+// src/components/AIContentGenerator.tsx - COMPLETE UPDATED VERSION
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -19,27 +19,18 @@ const PLATFORMS = [
   { id: 'twitter', name: 'X/Twitter', icon: '🦅', color: 'text-sky-400', charLimit: 280, sweet: '240-280' }
 ]
 
-// Timeframe options - FIXED to include weekends
-const TIMEFRAME_OPTIONS = [
-  { id: 'weekly', name: 'Weekly (5 posts)', description: 'Monday through Friday', postCount: 5 },
-  { id: 'full-week', name: 'Full Week (7 posts)', description: 'Monday through Sunday', postCount: 7 },
-  { id: 'monthly', name: 'Monthly (20 posts)', description: 'Full month coverage', postCount: 20 },
-  { id: 'quarterly', name: 'Quarterly (60 posts)', description: 'Seasonal campaign', postCount: 60 },
-  { id: 'custom', name: 'Custom Range', description: 'Choose your own dates', postCount: 0 }
+// Templates available
+const AVAILABLE_TEMPLATES = [
+  { id: 'seasonal_tip', name: 'Seasonal Tips', description: 'Weather-appropriate HVAC tips and advice', category: 'Educational' },
+  { id: 'maintenance_reminder', name: 'Maintenance Reminders', description: 'Regular service and tune-up reminders', category: 'Service' },
+  { id: 'weather_alert', name: 'Weather Alerts', description: 'Weather-related HVAC protection tips', category: 'Urgent' },
+  { id: 'promotion', name: 'Special Promotions', description: 'Service promotions and special offers', category: 'Marketing' },
+  { id: 'customer_story', name: 'Customer Success Stories', description: 'Testimonials and positive reviews', category: 'Social Proof' },
+  { id: 'company_update', name: 'Company News', description: 'Business updates and announcements', category: 'Company' },
+  { id: 'emergency_service', name: 'Emergency Service', description: '24/7 emergency availability reminders', category: 'Service' }
 ]
 
-// Content templates - no more seasonal themes, just structured templates
-const CONTENT_TEMPLATES = [
-  { id: 'seasonal_tip', name: 'Seasonal Tips', category: 'Educational' },
-  { id: 'maintenance_reminder', name: 'Maintenance Reminders', category: 'Service' },
-  { id: 'weather_alert', name: 'Weather Alerts', category: 'Urgent' },
-  { id: 'promotion', name: 'Promotions', category: 'Marketing' },
-  { id: 'customer_story', name: 'Customer Stories', category: 'Social Proof' },
-  { id: 'company_update', name: 'Company Updates', category: 'Company' },
-  { id: 'emergency_service', name: 'Emergency Service', category: 'Service' }
-]
-
-// ENHANCED: Daily themes for all 7 days
+// Daily themes for content structure
 const DAILY_THEMES = {
   monday: { theme: 'Monday Motivation', focus: 'Start week strong with service highlights', emoji: '💪' },
   tuesday: { theme: 'Tuesday Tips', focus: 'Educational HVAC/plumbing/electrical tips', emoji: '💡' },
@@ -50,17 +41,6 @@ const DAILY_THEMES = {
   sunday: { theme: 'Sunday Planning', focus: 'Week ahead preparation and maintenance planning', emoji: '📋' }
 }
 
-// Monthly specials type definition
-type MonthlySpecials = {
-  [month: number]: {
-    hvac?: string[]
-    plumbing?: string[]
-    electrical?: string[]
-    all?: string[]
-  }
-}
-
-// ENHANCED: WeeklyPost interface with image alternatives - FIXED typing
 interface WeeklyPost {
   id: string
   business: string
@@ -69,18 +49,23 @@ interface WeeklyPost {
   content: string
   characterCount: number
   withinLimits: boolean
-  status: 'generating' | 'completed' | 'error' | 'editing'
+  status: 'generating' | 'completed' | 'error' | 'editing' | 'posted' | 'scheduled'
   originalContent?: string
   isEdited?: boolean
   suggestedImage?: string
   suggestedImageUrl?: string 
   imageDescription?: string
-  imageAlternatives?: any[] | undefined  // ← FIXED: Explicitly allow undefined
+  imageAlternatives?: any[] | undefined
   templateUsed?: string
   monthlySpecials?: string[]
   specialsIncluded?: boolean
   metadata?: any
+  attemptsUsed?: number
+  regenerated?: boolean
+  scheduledDate?: string
 }
+
+type PostStatus = 'generating' | 'completed' | 'error' | 'editing' | 'posted' | 'scheduled'
 
 interface AICapabilities {
   isConfigured: boolean
@@ -99,6 +84,19 @@ interface BusinessSettings {
   contentThemes?: string[]
 }
 
+interface PostingSchedule {
+  platforms: {
+    [key: string]: {
+      enabled: boolean
+      daysOfWeek: string[]
+      postsPerDay: number
+      timeDistribution: 'auto' | 'custom'
+      customTimes: string[]
+      autoTimes: string[]
+    }
+  }
+}
+
 export default function AIContentGenerator() {
   const [capabilities, setCapabilities] = useState<AICapabilities | null>(null)
   const [loading, setLoading] = useState(false)
@@ -107,17 +105,18 @@ export default function AIContentGenerator() {
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [businessSettings, setBusinessSettings] = useState<Record<string, BusinessSettings>>({})
   const [monthlySpecials, setMonthlySpecials] = useState<Record<string, any>>({})
+  const [postingSchedules, setPostingSchedules] = useState<Record<string, PostingSchedule>>({})
   
   // Selection state
   const [selectedBusinesses, setSelectedBusinesses] = useState<string[]>(['lex-dallas'])
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['facebook'])
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>(['seasonal_tip', 'maintenance_reminder', 'promotion'])
   
-  // Timeframe selection
-  const [selectedTimeframe, setSelectedTimeframe] = useState('weekly')
-  const [customPostCount, setCustomPostCount] = useState(10)
+  // UPDATED: Strategic timeframe selection
+  const [selectedTimeframe, setSelectedTimeframe] = useState('1-week')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
   
-  // FIXED: Simple month selection (no hardcoded data)
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth())
   const [editingSpecials, setEditingSpecials] = useState(false)
   
@@ -126,410 +125,425 @@ export default function AIContentGenerator() {
   const [isGeneratingWeek, setIsGeneratingWeek] = useState(false)
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 })
   
-  // Individual post editing
-  const [editingPost, setEditingPost] = useState<string | null>(null)
-  const [editContent, setEditContent] = useState('')
-  
-  // ENHANCED: Image selection state
+  // Image handling
   const [showImageSelector, setShowImageSelector] = useState<string | null>(null)
-  const [loadingImageChange, setLoadingImageChange] = useState<string | null>(null)
+  const [imageLoading, setImageLoading] = useState<string | null>(null)
+  const [availableImages, setAvailableImages] = useState<any[]>([])
+  const [imageSearchQuery, setImageSearchQuery] = useState('')
   
-  // Options
-  const [generatePerPlatform, setGeneratePerPlatform] = useState(false)
-  const [useEnhancedSettings, setUseEnhancedSettings] = useState(true)
-  const [includeImages, setIncludeImages] = useState(true)
-  const [includeSpecials, setIncludeSpecials] = useState(true)
+  // Post selection for bulk actions
+  const [selectedPosts, setSelectedPosts] = useState<string[]>([])
+  
+  // Post/Schedule functionality 
+  const [schedulingPost, setSchedulingPost] = useState<string | null>(null)
+  const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split('T')[0])
+  const [scheduleTime, setScheduleTime] = useState('09:00')
+  const [postingInProgress, setPostingInProgress] = useState<string | null>(null)
 
-  // Load capabilities on mount
+  // Initialize capabilities and settings
   useEffect(() => {
     loadCapabilities()
+    loadBusinessSettings()
   }, [])
 
+  // Reload settings when selection changes
   useEffect(() => {
-    if (selectedBusinesses.length > 0 && useEnhancedSettings) {
+    if (selectedBusinesses.length > 0) {
       loadBusinessSettings()
-      loadMonthlySpecials()
+      loadPostingSchedules()
     }
-  }, [selectedBusinesses, useEnhancedSettings])
+  }, [selectedBusinesses])
 
+  // Load AI capabilities
   const loadCapabilities = async () => {
+    setLoading(true)
     try {
+      // Check OpenAI configuration
       const response = await fetch('/api/ai/capabilities')
       const data = await response.json()
-      if (data.success) {
-        setCapabilities(data.capabilities)
-      }
-    } catch (error) {
-      console.error('Failed to load AI capabilities:', error)
+      
       setCapabilities({
-        isConfigured: true,
-        availableTemplates: CONTENT_TEMPLATES,
+        isConfigured: data.success,
+        availableTemplates: AVAILABLE_TEMPLATES,
         supportedPlatforms: PLATFORMS,
         supportedBusinesses: BUSINESSES
       })
+    } catch (error) {
+      console.error('Failed to load AI capabilities:', error)
+      setCapabilities({
+        isConfigured: false,
+        availableTemplates: [],
+        supportedPlatforms: [],
+        supportedBusinesses: []
+      })
+    } finally {
+      setLoading(false)
     }
   }
 
+  // FIXED: Enhanced business settings loading with comprehensive debugging
   const loadBusinessSettings = async () => {
     setSettingsLoading(true)
-    try {
-      const promises = selectedBusinesses.map(async (businessId) => {
-        try {
-          const response = await fetch(`/api/business-settings/${businessId}`)
-          if (response.ok) {
-            const data = await response.json()
-            return { businessId, settings: data.success ? data.settings : null }
-          }
-        } catch (error) {
-          console.log(`Business settings API not available for ${businessId}`)
-        }
-        return { businessId, settings: null }
-      })
-      
-      const results = await Promise.all(promises)
-      const settingsMap: Record<string, BusinessSettings> = {}
-      
-      results.forEach(({ businessId, settings }) => {
-        if (settings) {
-          settingsMap[businessId] = settings
-        }
-      })
-      
-      setBusinessSettings(settingsMap)
-    } catch (error) {
-      console.log('Business settings not available, using defaults')
-    } finally {
-      setSettingsLoading(false)
-    }
-  }
+    const newSettings: Record<string, BusinessSettings> = {}
+    const newMonthlySpecials: Record<string, any> = {}
 
-  const loadMonthlySpecials = async () => {
-    try {
-      const currentYear = new Date().getFullYear()
-      const promises = selectedBusinesses.map(async (businessId) => {
-        try {
-          // Correct API path: /api/businesses/{businessId}/monthly-specials
-          const response = await fetch(`/api/businesses/${businessId}/monthly-specials?year=${currentYear}`)
-          if (response.ok) {
-            const data = await response.json()
-            return { businessId, specials: data.success ? data.specials : null }
-          } else {
-            console.log(`Monthly specials API returned ${response.status} for ${businessId}`)
-          }
-        } catch (error) {
-          console.log(`Monthly specials API not reachable for ${businessId}`)
-        }
-        return { businessId, specials: null }
-      })
-      
-      const results = await Promise.all(promises)
-      const specialsMap: Record<string, any> = {}
-      
-      results.forEach(({ businessId, specials }) => {
-        if (specials && Array.isArray(specials)) {
-          // Convert array of monthly specials to month-indexed object
-          const monthlySpecialsMap: Record<number, any> = {}
-          specials.forEach((special: any) => {
-            monthlySpecialsMap[special.month] = {
-              hvac: special.hvac || [],
-              plumbing: special.plumbing || [],
-              electrical: special.electrical || [],
-              all: special.all || []
-            }
-          })
-          specialsMap[businessId] = monthlySpecialsMap
-        }
-      })
-      
-      console.log('📊 Loaded monthly specials from database:', specialsMap)
-      setMonthlySpecials(specialsMap)
-    } catch (error) {
-      console.log('Monthly specials API not available, database may not be initialized')
-    }
-  }
-
-  const getPostCount = () => {
-    const option = TIMEFRAME_OPTIONS.find(opt => opt.id === selectedTimeframe)
-    return selectedTimeframe === 'custom' ? customPostCount : (option?.postCount || 5)
-  }
-
-  const getMonthlySpecials = (businessId: string) => {
-    console.log(`🔍 Getting specials for ${businessId}, month: ${currentMonth}`)
-    
-    // Check loaded specials from database
-    if (monthlySpecials[businessId] && monthlySpecials[businessId][currentMonth]) {
-      const specials = monthlySpecials[businessId][currentMonth]
-      console.log(`✅ Found database specials for ${businessId}:`, specials)
-      const allSpecials = [
-        ...(specials.hvac || []),
-        ...(specials.plumbing || []),
-        ...(specials.electrical || []),
-        ...(specials.all || [])
-      ]
-      console.log(`📋 Combined specials for ${businessId}:`, allSpecials)
-      return allSpecials
-    }
-    
-    // No specials found in database
-    console.log(`❌ No database specials found for ${businessId} month ${currentMonth}`)
-    console.log(`💾 Available months in database for ${businessId}:`, Object.keys(monthlySpecials[businessId] || {}))
-    return []
-  }
-
-  // ENHANCED: Generate content using enhanced AI service with proper prompt and day parameter
-  const generatePostContent = async (business: string, day: string, platform: string, templateType?: string) => {
-    console.log(`🤖 Enhanced generation for ${business} - ${day} - ${platform}`)
-    
-    const platformInfo = PLATFORMS.find(p => p.id === platform)
-    
-    // Build the proper prompt based on daily theme
-    const dailyTheme = DAILY_THEMES[day as keyof typeof DAILY_THEMES] || {
-      theme: 'engaging business content',
-      focus: 'professional service content',
-      emoji: '🏢'
-    }
-    
-    console.log(`📅 Using daily theme for ${day}:`, dailyTheme) // Debug log
-    
-    const prompt = `Generate ${dailyTheme.theme} social media content for ${business} business. 
-Daily focus: ${dailyTheme.focus}
-Platform: ${platform}
-${dailyTheme.emoji} Create engaging, professional content that naturally incorporates relevant monthly specials and showcases expertise.`
-
-    console.log(`🔤 Generated prompt for ${day}:`, prompt.substring(0, 100) + '...')
-    console.log(`🎯 FULL PROMPT being sent:`, prompt)
-    try {
-      console.log(`🚀 Sending to API - Day: "${day}", Business: "${business}", Platform: "${platform}"`) // Debug log
-      
-      const response = await fetch('/api/ai/generate-enhanced-content', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: prompt,
-          businessId: business,
-          platform: platform,
-          contentType: 'weekly-automation',
-          includeSpecials: includeSpecials,
-          includeImages: includeImages,
-          includeContentBlocks: true,
-          day: day // ← Added day parameter for variety
-        })
-      })
-
-      const data = await response.json()
-      
-      if (data.success) {
-        console.log(`✅ Enhanced generation successful:`, {
-          contentLength: data.content?.length || 0,
-          hasImage: !!data.metadata?.suggestedImage,
-          specialsIncluded: data.metadata?.usedSpecials?.length || 0,
-          templateUsed: data.metadata?.templateUsed,
-          withinLimits: data.metadata?.withinLimits,
-          imageAlternatives: data.metadata?.imageAlternatives?.length || 0
-        })
-        
-        return {
-          content: data.content,
-          suggestedImageUrl: data.metadata?.suggestedImage?.startsWith('/uploads') ? data.metadata.suggestedImage : undefined,
-          imageDescription: data.metadata?.imageDescription || data.metadata?.suggestedImage,
-          suggestedImage: data.metadata?.suggestedImage,
-          imageAlternatives: data.metadata?.imageAlternatives || [], // ← Added for selection
-          monthlySpecials: data.metadata?.usedSpecials,
-          specialsIncluded: data.metadata?.usedSpecials?.length > 0,
-          templateUsed: data.metadata?.templateUsed || dailyTheme.theme
-        }
-      } else {
-        throw new Error(data.error || 'Enhanced generation failed')
-      }
-    } catch (error) {
-      console.error('Enhanced content generation failed:', error)
-      throw error
-    }
-  }
-
-  // ENHANCED: Function to change image for a post
-  const changePostImage = async (postId: string, newImageUrl: string, newImageId: string, newDescription: string) => {
-    setLoadingImageChange(postId)
-    
-    try {
-      // Update the post with new image
-      setWeeklyPosts(prev => prev.map(post => 
-        post.id === postId 
-          ? { 
-              ...post, 
-              suggestedImageUrl: newImageUrl,
-              imageDescription: newDescription,
-              // Keep the same alternatives for future changes
-            }
-          : post
-      ))
-      
-      // Update usage count for new image (optional API call)
+    for (const businessId of selectedBusinesses) {
       try {
-        await fetch('/api/images/update-usage', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ imageId: newImageId })
-        })
+        console.log(`📄 Loading settings for business: ${businessId}`)
+        
+        // Load business settings
+        const settingsResponse = await fetch(`/api/businesses/${businessId}/settings-status`)
+        if (settingsResponse.ok) {
+          const settingsData = await settingsResponse.json()
+          console.log(`📋 Settings status for ${businessId}:`, settingsData)
+          
+          newSettings[businessId] = {
+            isConfigured: settingsData.isConfigured,
+            warnings: settingsData.warnings || [],
+            errors: settingsData.errors || []
+          }
+        }
+        
+        // FIX: Load monthly specials explicitly and with better debugging
+        const currentYear = new Date().getFullYear()
+        const currentMonth = new Date().getMonth()
+        console.log(`📅 Loading specials for ${businessId}, year: ${currentYear}, month: ${currentMonth}`)
+        
+        const specialsResponse = await fetch(`/api/businesses/${businessId}/monthly-specials?year=${currentYear}`)
+        if (specialsResponse.ok) {
+          const specialsData = await specialsResponse.json()
+          console.log(`📊 Raw monthly specials data for ${businessId}:`, specialsData)
+          
+          if (specialsData.success && specialsData.specials) {
+            // Get current month's specials
+            const currentMonthSpecials = specialsData.specials.find((s: any) => s.month === currentMonth)
+            if (currentMonthSpecials) {
+              newMonthlySpecials[businessId] = currentMonthSpecials
+              console.log(`✅ Found specials for ${businessId} month ${currentMonth}:`, currentMonthSpecials)
+            } else {
+              console.log(`⚠️ No specials found for ${businessId} month ${currentMonth}`)
+              console.log(`Available months:`, specialsData.specials.map((s: any) => s.month))
+            }
+          }
+        }
+        
       } catch (error) {
-        console.warn('Failed to update image usage:', error)
+        console.error(`❌ Failed to load settings for ${businessId}:`, error)
+        newSettings[businessId] = {
+          isConfigured: false,
+          warnings: [],
+          errors: [`Failed to load settings: ${error}`]
+        }
       }
+    }
+
+    setBusinessSettings(newSettings)
+    setMonthlySpecials(newMonthlySpecials)
+    setSettingsLoading(false)
+    
+    // FIX: Add comprehensive debug output
+    console.log('🔍 Final loaded settings:', {
+      businessSettings: newSettings,
+      monthlySpecials: newMonthlySpecials,
+      selectedBusinesses,
+      selectedPlatforms,
+      debugInfo: {
+        currentMonth: new Date().getMonth(),
+        currentYear: new Date().getFullYear(),
+        includeSpecialsForced: true
+      }
+    })
+  }
+
+  // Load available images for business
+  const loadAvailableImages = async (businessId: string, searchQuery: string = '') => {
+    try {
+      const params = new URLSearchParams({
+        businessId,
+        limit: '50', // Load more images
+        ...(searchQuery && { search: searchQuery })
+      })
       
-      setShowImageSelector(null)
+      const response = await fetch(`/api/businesses/${businessId}/images?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        setAvailableImages(data.images || [])
+      }
     } catch (error) {
-      console.error('Failed to change image:', error)
-    } finally {
-      setLoadingImageChange(null)
+      console.error('Failed to load available images:', error)
+      setAvailableImages([])
     }
   }
 
-  // FIXED: Generate weekly content with proper templates
-  const generateWeeklyContent = async () => {
-    if (!capabilities?.isConfigured) {
-      alert('AI service not configured')
-      return
+  // Handle post selection
+  const togglePostSelection = (postId: string) => {
+    setSelectedPosts(prev => 
+      prev.includes(postId) 
+        ? prev.filter(id => id !== postId)
+        : [...prev, postId]
+    )
+  }
+
+  const selectAllPosts = () => {
+    const completedPosts = weeklyPosts.filter(p => p.status === 'completed').map(p => p.id)
+    setSelectedPosts(completedPosts)
+  }
+
+  const clearPostSelection = () => {
+    setSelectedPosts([])
+  }
+  const loadPostingSchedules = async () => {
+    const schedules: Record<string, PostingSchedule> = {}
+    
+    for (const businessId of selectedBusinesses) {
+      try {
+        const response = await fetch(`/api/business/posting-schedule?businessId=${businessId}`)
+        const data = await response.json()
+        
+        if (data.success) {
+          schedules[businessId] = data.data.postingSchedule
+        }
+      } catch (error) {
+        console.error(`Failed to load posting schedule for ${businessId}:`, error)
+      }
+    }
+    
+    setPostingSchedules(schedules)
+  }
+
+  // Helper function to get optimal posting times from business settings
+  const getOptimalPostingTimes = (businessId: string, platform: string, startDate: Date): Date[] => {
+    const schedule = postingSchedules[businessId]
+    const platformSchedule = schedule?.platforms?.[platform]
+    
+    if (!platformSchedule?.enabled || !platformSchedule.daysOfWeek?.length) {
+      console.log(`⚠️ No posting schedule found for ${businessId} on ${platform}, using default times`)
+      // Fallback to default times if no schedule configured
+      return [startDate]
     }
 
-    if (selectedBusinesses.length === 0) {
-      alert('Please select at least one business')
-      return
+    const times: Date[] = []
+    const startDateCopy = new Date(startDate)
+    
+    // Get the times to post at
+    const postingTimes = platformSchedule.timeDistribution === 'custom' 
+      ? platformSchedule.customTimes 
+      : platformSchedule.autoTimes || ['09:00', '14:00', '18:00'] // Default fallback times
+
+    // Generate posting dates for the next week
+    for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+      const currentDate = new Date(startDateCopy.getTime() + (dayOffset * 24 * 60 * 60 * 1000))
+      const dayName = currentDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() // Get day name and convert to lowercase
+      
+      // Check if this day is enabled for posting
+      if (platformSchedule.daysOfWeek.includes(dayName)) {
+        // Add posts for this day based on postsPerDay
+        const postsToday = Math.min(platformSchedule.postsPerDay || 1, postingTimes.length)
+        
+        for (let postIndex = 0; postIndex < postsToday; postIndex++) {
+          const [hours, minutes] = postingTimes[postIndex].split(':').map(Number)
+          const postTime = new Date(currentDate)
+          postTime.setHours(hours, minutes, 0, 0)
+          
+          // Only add future times
+          if (postTime > new Date()) {
+            times.push(postTime)
+          }
+        }
+      }
     }
 
-    if (selectedPlatforms.length === 0) {
-      alert('Please select at least one platform')
+    console.log(`📅 Generated ${times.length} optimal posting times for ${businessId} on ${platform}`)
+    return times
+  }
+
+  // Get expected post count based on selection
+  const getExpectedPostCount = () => {
+    if (selectedTimeframe === '1-week') {
+      return selectedBusinesses.length * selectedPlatforms.length * 5 // M-F
+    } else if (selectedTimeframe === '2-week') {
+      return selectedBusinesses.length * selectedPlatforms.length * 10
+    } else if (selectedTimeframe === '1-month') {
+      return selectedBusinesses.length * selectedPlatforms.length * 20
+    }
+    
+    // Custom date range
+    if (customStartDate && customEndDate) {
+      const start = new Date(customStartDate)
+      const end = new Date(customEndDate)
+      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 3600 * 24))
+      return Math.min(daysDiff * selectedBusinesses.length * selectedPlatforms.length, 100)
+    }
+    
+    return 0
+  }
+
+  // Generate week of content
+  const generateWeekOfContent = async () => {
+    if (selectedBusinesses.length === 0 || selectedPlatforms.length === 0) {
+      alert('Please select at least one business and one platform')
       return
     }
 
     setIsGeneratingWeek(true)
     setWeeklyPosts([])
     
-    const postCount = getPostCount()
-    const totalPosts = selectedBusinesses.length * postCount * (generatePerPlatform ? selectedPlatforms.length : 1)
+    const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
+    const totalPosts = selectedBusinesses.length * selectedPlatforms.length * days.length
     setGenerationProgress({ current: 0, total: totalPosts })
-    
-    const newPosts: WeeklyPost[] = []
-    let progressCount = 0
 
-    const daysToGenerate = selectedTimeframe === 'weekly' 
-      ? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-      : selectedTimeframe === 'full-week'
-      ? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-      : Array.from({ length: postCount }, (_, i) => 
-          ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'][i % 7]
-        )
+    const allPosts: WeeklyPost[] = []
+    let currentProgress = 0
 
     try {
-      for (const business of selectedBusinesses) {
-        for (let i = 0; i < daysToGenerate.length; i++) {
-          const day = daysToGenerate[i]
-          const platforms = generatePerPlatform ? selectedPlatforms : [selectedPlatforms[0]]
-          
-          for (const platform of platforms) {
-            const postId = `${business}-${day}-${platform}-${i}`
+      for (const businessId of selectedBusinesses) {
+        for (const platform of selectedPlatforms) {
+          for (const day of days) {
+            const postId = `${businessId}-${platform}-${day}-${Date.now()}`
             
-            // Create initial post entry
-            const newPost: WeeklyPost = {
+            // Add placeholder post
+            const placeholderPost: WeeklyPost = {
               id: postId,
-              business,
+              business: businessId,
               day,
               platform,
               content: '',
               characterCount: 0,
               withinLimits: true,
               status: 'generating',
-              templateUsed: 'generating...'
+              monthlySpecials: [],
+              specialsIncluded: false
             }
-            
-            newPosts.push(newPost)
-            setWeeklyPosts([...newPosts])
-            
+            allPosts.push(placeholderPost)
+            setWeeklyPosts([...allPosts])
+
             try {
-              // Generate content for this post
-              const result = await generatePostContent(business, day, platform)
+              // FIX: Generate content with fixes
+              const result = await generatePostContent(businessId, day, platform)
               const platformInfo = PLATFORMS.find(p => p.id === platform)
               const characterCount = result.content.length
               const withinLimits = characterCount <= (platformInfo?.charLimit || 1000)
-              
-              // Update post with generated content
+
+              // Update the post with results
               const updatedPost: WeeklyPost = {
-                ...newPost,
+                ...placeholderPost,
                 content: result.content,
                 characterCount,
                 withinLimits,
                 status: 'completed',
                 suggestedImage: result.suggestedImage,
-                suggestedImageUrl: result.suggestedImageUrl, // ← Enhanced
-                imageDescription: result.imageDescription,   // ← Enhanced
-                imageAlternatives: result.imageAlternatives, // ← Enhanced
+                suggestedImageUrl: result.suggestedImageUrl,
+                imageDescription: result.imageDescription,
+                imageAlternatives: result.imageAlternatives,
                 templateUsed: result.templateUsed,
-                monthlySpecials: result.monthlySpecials,
-                specialsIncluded: result.specialsIncluded
+                monthlySpecials: result.monthlySpecials || [],
+                specialsIncluded: result.specialsIncluded || false,
+                metadata: result.metadata,
+                attemptsUsed: result.attemptsUsed,
+                regenerated: result.regenerated
               }
-              
-              // Update the post in the array
-              newPosts[newPosts.length - 1] = updatedPost
-              setWeeklyPosts([...newPosts])
-              
+
+              // Update allPosts array
+              const postIndex = allPosts.findIndex(p => p.id === postId)
+              if (postIndex !== -1) {
+                allPosts[postIndex] = updatedPost
+              }
+
             } catch (error) {
-              console.error(`Failed to generate content for ${postId}:`, error)
-              
-              // Update post with error status
               const errorPost: WeeklyPost = {
-                ...newPost,
-                content: `Error generating content: ${error instanceof Error ? error.message : 'Unknown error'}`,
-                status: 'error'
+                ...placeholderPost,
+                status: 'error',
+                content: `Error: ${error instanceof Error ? error.message : 'Generation failed'}`
               }
               
-              newPosts[newPosts.length - 1] = errorPost
-              setWeeklyPosts([...newPosts])
+              const postIndex = allPosts.findIndex(p => p.id === postId)
+              if (postIndex !== -1) {
+                allPosts[postIndex] = errorPost
+              }
             }
+
+            currentProgress++
+            setGenerationProgress({ current: currentProgress, total: totalPosts })
+            setWeeklyPosts([...allPosts])
             
-            progressCount++
-            setGenerationProgress({ current: progressCount, total: totalPosts })
-            
-            // Small delay to prevent overwhelming the API
+            // Small delay to prevent rate limiting
             await new Promise(resolve => setTimeout(resolve, 500))
           }
         }
       }
     } catch (error) {
-      console.error('Batch generation failed:', error)
-      alert('Generation failed: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      console.error('Week generation failed:', error)
+      alert('Failed to generate week of content. Please try again.')
     } finally {
       setIsGeneratingWeek(false)
+      setGenerationProgress({ current: 0, total: 0 })
     }
   }
 
-  const startEditing = (post: WeeklyPost) => {
-    setEditingPost(post.id)
-    setEditContent(post.content)
+  // FIX: Generate content for a specific post with all the fixes
+  const generatePostContent = async (businessId: string, day: string, platform: string) => {
+    console.log(`🎯 Generating content for ${businessId} - ${day} - ${platform}`)
+    
+    const response = await fetch('/api/ai/generate-enhanced-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: `Generate ${DAILY_THEMES[day as keyof typeof DAILY_THEMES]?.theme || day} content for ${businessId}`,
+        businessId,
+        platform,
+        contentType: 'weekly-automation',
+        // FIX 1: Force includeSpecials to TRUE as debug shows it should be
+        includeSpecials: true, // Was: selectedTemplates.includes('promotion')
+        includeImages: true,
+        includeContentBlocks: true,
+        day,
+        // FIX 2: Add explicit month parameter to ensure current month specials are used
+        month: new Date().getMonth() // Add current month (0-11)
+      })
+    })
+
+    if (!response.ok) {
+      const error = await response.json()
+      throw new Error(error.error || 'Content generation failed')
+    }
+
+    const result = await response.json()
+    console.log(`✅ Generated content result:`, result.data)
+    console.log(`📊 Monthly specials included:`, result.data.monthlySpecials)
+    console.log(`🖼️ Image selected:`, result.data.suggestedImageUrl)
+    
+    return result.data
   }
 
-  const saveEdit = (postId: string) => {
-    setWeeklyPosts(prev => prev.map(post => 
-      post.id === postId 
-        ? { 
-            ...post, 
-            content: editContent,
-            characterCount: editContent.length,
-            withinLimits: editContent.length <= (PLATFORMS.find(p => p.id === post.platform)?.charLimit || 1000),
-            isEdited: true,
-            originalContent: post.originalContent || post.content
-          }
-        : post
-    ))
-    setEditingPost(null)
-    setEditContent('')
+  // Handle content editing
+  const editPost = (postId: string, newContent: string) => {
+    setWeeklyPosts(prev => prev.map(post => {
+      if (post.id === postId) {
+        const platformInfo = PLATFORMS.find(p => p.id === post.platform)
+        const characterCount = newContent.length
+        const withinLimits = characterCount <= (platformInfo?.charLimit || 1000)
+        
+        return {
+          ...post,
+          content: newContent,
+          characterCount,
+          withinLimits,
+          status: 'editing' as const,
+          originalContent: post.originalContent || post.content,
+          isEdited: true
+        }
+      }
+      return post
+    }))
   }
 
-  const cancelEdit = () => {
-    setEditingPost(null)
-    setEditContent('')
-  }
+  // Regenerate a specific post
+  const regeneratePost = async (postId: string) => {
+    const post = weeklyPosts.find(p => p.id === postId)
+    if (!post) return
 
-  const regeneratePost = async (post: WeeklyPost) => {
     setWeeklyPosts(prev => prev.map(p => 
-      p.id === post.id ? { ...p, status: 'generating' as const } : p
+      p.id === postId ? { ...p, status: 'generating' as const } : p
     ))
 
     try {
@@ -538,561 +552,1063 @@ ${dailyTheme.emoji} Create engaging, professional content that naturally incorpo
       const characterCount = result.content.length
       const withinLimits = characterCount <= (platformInfo?.charLimit || 1000)
 
-      setWeeklyPosts(prev => prev.map(p => 
-        p.id === post.id 
-          ? { 
-              ...p, 
-              content: result.content,
-              characterCount,
-              withinLimits,
-              status: 'completed' as const,
-              suggestedImage: result.suggestedImage,
-              suggestedImageUrl: result.suggestedImageUrl,
-              imageDescription: result.imageDescription,
-              imageAlternatives: result.imageAlternatives,
-              templateUsed: result.templateUsed,
-              monthlySpecials: result.monthlySpecials,
-              isEdited: false,
-              originalContent: undefined
-            } 
+      setWeeklyPosts(prev => prev.map(p =>
+        p.id === postId
+          ? { ...p, ...result, characterCount, withinLimits, status: 'completed' as const, regenerated: true }
           : p
       ))
     } catch (error) {
-      setWeeklyPosts(prev => prev.map(p => 
-        p.id === post.id 
-          ? { 
-              ...p, 
-              content: `Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-              status: 'error' as const 
-            } 
+      setWeeklyPosts(prev => prev.map(p =>
+        p.id === postId
+          ? { ...p, status: 'error' as const, content: `Error: ${error instanceof Error ? error.message : 'Regeneration failed'}` }
           : p
       ))
     }
   }
 
-  // ENHANCED: Render individual post component with improved image display and selection - FIXED
-  const renderPost = (post: WeeklyPost) => {
-    // FIXED: Helper to check if image alternatives exist
-    const hasImageAlternatives = post.imageAlternatives && Array.isArray(post.imageAlternatives) && post.imageAlternatives.length > 0
+  // Post now
+  const postNow = async (postId: string) => {
+    const post = weeklyPosts.find(p => p.id === postId)
+    if (!post) return
+
+    setPostingInProgress(postId)
+    
+    try {
+      const response = await fetch('/api/social/post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: post.content,
+          platform: post.platform,
+          businessId: post.business,
+          imageUrl: post.suggestedImageUrl
+        })
+      })
+
+      if (response.ok) {
+        setWeeklyPosts(prev => prev.map(p =>
+          p.id === postId ? { ...p, status: 'posted' as const } : p
+        ))
+        alert('Post published successfully!')
+      } else {
+        throw new Error('Failed to publish post')
+      }
+    } catch (error) {
+      console.error('Post failed:', error)
+      alert('Failed to publish post. Please try again.')
+    } finally {
+      setPostingInProgress(null)
+    }
+  }
+
+  // Schedule post
+  const schedulePost = async (postId: string) => {
+    const post = weeklyPosts.find(p => p.id === postId)
+    if (!post || !scheduleDate || !scheduleTime) return
+
+    try {
+      const scheduledDateTime = new Date(`${scheduleDate}T${scheduleTime}`)
+
+      const response = await fetch('/api/social/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: post.content,
+          platform: post.platform,
+          businessId: post.business,
+          imageUrl: post.suggestedImageUrl,
+          scheduledFor: scheduledDateTime.toISOString()
+        })
+      })
+
+      if (response.ok) {
+        setWeeklyPosts(prev => prev.map(p =>
+          p.id === postId 
+            ? { ...p, status: 'scheduled' as const, scheduledDate: scheduledDateTime.toISOString() }
+            : p
+        ))
+        setSchedulingPost(null)
+        alert('Post scheduled successfully!')
+      } else {
+        throw new Error('Failed to schedule post')
+      }
+    } catch (error) {
+      console.error('Scheduling failed:', error)
+      alert('Failed to schedule post. Please try again.')
+    }
+  }
+
+  // Bulk schedule all posts using business settings
+  const scheduleAllPosts = async () => {
+    const schedulablePosts = weeklyPosts.filter(p => p.status === 'completed')
+    
+    if (schedulablePosts.length === 0) {
+      alert('No posts available to schedule')
+      return
+    }
+
+    try {
+      setIsGeneratingWeek(true)
+      setGenerationProgress({ current: 0, total: schedulablePosts.length })
+
+      const postsToSchedule: any[] = []
+      const startDate = scheduleDate ? new Date(scheduleDate) : new Date()
+
+      // Group posts by business and platform to use their optimal times
+      const postGroups: Record<string, Record<string, typeof schedulablePosts>> = {}
+      
+      schedulablePosts.forEach(post => {
+        if (!postGroups[post.business]) postGroups[post.business] = {}
+        if (!postGroups[post.business][post.platform]) postGroups[post.business][post.platform] = []
+        postGroups[post.business][post.platform].push(post)
+      })
+
+      // Schedule each group using their business settings
+      Object.entries(postGroups).forEach(([businessId, platforms]) => {
+        Object.entries(platforms).forEach(([platform, posts]) => {
+          const optimalTimes = getOptimalPostingTimes(businessId, platform, startDate)
+          
+          posts.forEach((post, index) => {
+            // Use optimal times, or fallback to hourly spacing if we run out
+            let scheduledDateTime: Date
+            
+            if (index < optimalTimes.length) {
+              scheduledDateTime = optimalTimes[index]
+            } else {
+              // Fallback: space remaining posts 2 hours apart from the last optimal time
+              const lastOptimalTime = optimalTimes[optimalTimes.length - 1] || startDate
+              scheduledDateTime = new Date(lastOptimalTime.getTime() + ((index - optimalTimes.length + 1) * 2 * 60 * 60 * 1000))
+            }
+
+            postsToSchedule.push({
+              content: post.content,
+              platform: post.platform,
+              businessId: post.business,
+              imageUrl: post.suggestedImageUrl,
+              scheduledFor: scheduledDateTime.toISOString()
+            })
+          })
+        })
+      })
+
+      console.log(`🗓️ Bulk scheduling ${postsToSchedule.length} posts using business posting schedules...`)
+
+      // Call bulk schedule API
+      const response = await fetch('/api/social/schedule-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ posts: postsToSchedule })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        // Update post statuses to scheduled
+        setWeeklyPosts(prev => prev.map(post => {
+          const scheduledPost = result.results.scheduled.find((s: any) => 
+            s.platform === post.platform && 
+            s.businessId === post.business &&
+            schedulablePosts.some(sp => sp.id === post.id)
+          )
+          
+          if (scheduledPost) {
+            return {
+              ...post,
+              status: 'scheduled' as const,
+              scheduledDate: scheduledPost.scheduledFor
+            }
+          }
+          return post
+        }))
+
+        alert(`✅ ${result.results.summary.successful} posts scheduled using your business posting schedules!${
+          result.results.summary.failed > 0 ? ` ${result.results.summary.failed} failed.` : ''
+        }`)
+        
+        console.log('📊 Bulk scheduling results:', result.results.summary)
+      } else {
+        throw new Error(result.error || 'Bulk scheduling failed')
+      }
+
+    } catch (error) {
+      console.error('❌ Bulk scheduling failed:', error)
+      alert(`Failed to schedule posts: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsGeneratingWeek(false)
+      setGenerationProgress({ current: 0, total: 0 })
+    }
+  }
+
+  // Schedule selected posts only
+  const scheduleSelectedPosts = async () => {
+    if (selectedPosts.length === 0) {
+      alert('Please select posts to schedule')
+      return
+    }
+
+    const schedulablePosts = weeklyPosts.filter(p => selectedPosts.includes(p.id) && p.status === 'completed')
+    
+    if (schedulablePosts.length === 0) {
+      alert('No completed posts selected')
+      return
+    }
+
+    try {
+      setIsGeneratingWeek(true)
+      setGenerationProgress({ current: 0, total: schedulablePosts.length })
+
+      const postsToSchedule: any[] = []
+      const startDate = scheduleDate ? new Date(scheduleDate) : new Date()
+
+      // Group posts by business and platform to use their optimal times
+      const postGroups: Record<string, Record<string, typeof schedulablePosts>> = {}
+      
+      schedulablePosts.forEach(post => {
+        if (!postGroups[post.business]) postGroups[post.business] = {}
+        if (!postGroups[post.business][post.platform]) postGroups[post.business][post.platform] = []
+        postGroups[post.business][post.platform].push(post)
+      })
+
+      // Schedule each group using their business settings
+      Object.entries(postGroups).forEach(([businessId, platforms]) => {
+        Object.entries(platforms).forEach(([platform, posts]) => {
+          const optimalTimes = getOptimalPostingTimes(businessId, platform, startDate)
+          
+          posts.forEach((post, index) => {
+            let scheduledDateTime: Date
+            
+            if (index < optimalTimes.length) {
+              scheduledDateTime = optimalTimes[index]
+            } else {
+              const lastOptimalTime = optimalTimes[optimalTimes.length - 1] || startDate
+              scheduledDateTime = new Date(lastOptimalTime.getTime() + ((index - optimalTimes.length + 1) * 2 * 60 * 60 * 1000))
+            }
+
+            postsToSchedule.push({
+              content: post.content,
+              platform: post.platform,
+              businessId: post.business,
+              imageUrl: post.suggestedImageUrl,
+              scheduledFor: scheduledDateTime.toISOString()
+            })
+          })
+        })
+      })
+
+      console.log(`🗓️ Scheduling ${postsToSchedule.length} selected posts...`)
+
+      const response = await fetch('/api/social/schedule-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ posts: postsToSchedule })
+      })
+
+      const result = await response.json()
+
+      if (result.success) {
+        setWeeklyPosts(prev => prev.map(post => {
+          const scheduledPost = result.results.scheduled.find((s: any) => 
+            s.platform === post.platform && 
+            s.businessId === post.business &&
+            schedulablePosts.some(sp => sp.id === post.id)
+          )
+          
+          if (scheduledPost) {
+            return {
+              ...post,
+              status: 'scheduled' as const,
+              scheduledDate: scheduledPost.scheduledFor
+            }
+          }
+          return post
+        }))
+
+        // Clear selection after scheduling
+        setSelectedPosts([])
+        
+        alert(`✅ ${result.results.summary.successful} selected posts scheduled!${
+          result.results.summary.failed > 0 ? ` ${result.results.summary.failed} failed.` : ''
+        }`)
+      } else {
+        throw new Error(result.error || 'Scheduling failed')
+      }
+
+    } catch (error) {
+      console.error('❌ Selected posts scheduling failed:', error)
+      alert(`Failed to schedule selected posts: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setIsGeneratingWeek(false)
+      setGenerationProgress({ current: 0, total: 0 })
+    }
+  }
+
+  // Select suggested image for a post
+  const selectSuggestedImage = async (postId: string, imageUrl: string) => {
+    setImageLoading(postId)
+    
+    try {
+      setWeeklyPosts(prev => prev.map(post => 
+        post.id === postId 
+          ? { ...post, suggestedImageUrl: imageUrl }
+          : post
+      ))
+      alert('Image updated successfully!')
+    } catch (error) {
+      console.error('Failed to update image:', error)
+      alert('Failed to update image')
+    } finally {
+      setImageLoading(null)
+      setShowImageSelector(null)
+    }
+  }
+
+  // Open image selector with business images
+  const openImageSelector = async (postId: string) => {
+    const post = weeklyPosts.find(p => p.id === postId)
+    if (!post) return
+    
+    setShowImageSelector(postId)
+    setImageSearchQuery('')
+    await loadAvailableImages(post.business)
+  }
+
+  // Search images
+  const searchImages = async (query: string) => {
+    setImageSearchQuery(query)
+    const post = weeklyPosts.find(p => p.id === showImageSelector)
+    if (!post) return
+    
+    await loadAvailableImages(post.business, query)
+  }
+
+  // Handle month change for specials editing
+  const changeSpecialsMonth = (direction: 'prev' | 'next') => {
+    setCurrentMonth(prev => {
+      const newMonth = direction === 'next' 
+        ? (prev + 1) % 12 
+        : prev === 0 ? 11 : prev - 1
+      return newMonth
+    })
+  }
+
+  // Render a post card
+  const renderPost = (post: WeeklyPost, index: number) => {
+    const businessInfo = BUSINESSES.find(b => b.id === post.business)
+    const platformInfo = PLATFORMS.find(p => p.id === post.platform)
+    const dayTheme = DAILY_THEMES[post.day as keyof typeof DAILY_THEMES]
+
+    const getStatusColor = (status: string) => {
+      switch (status) {
+        case 'generating': return 'text-yellow-400'
+        case 'completed': return 'text-green-400'
+        case 'error': return 'text-red-400'
+        case 'editing': return 'text-blue-400'
+        case 'posted': return 'text-purple-400'
+        case 'scheduled': return 'text-cyan-400'
+        default: return 'text-gray-400'
+      }
+    }
 
     return (
-      <div key={post.id} className="bg-slate-800/30 rounded-lg p-4 border border-gray-600">
-        <div className="flex items-center justify-between mb-3">
+      <div key={post.id} className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+        <div className="flex justify-between items-start mb-3">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className={BUSINESSES.find(b => b.id === post.business)?.color}>
-                {BUSINESSES.find(b => b.id === post.business)?.name}
-              </span>
-              <span className="text-dark-text-muted">•</span>
-              <span className="capitalize text-dark-text-secondary">{post.day}</span>
-              <span className="text-dark-text-muted">•</span>
-              <span className={PLATFORMS.find(p => p.id === post.platform)?.color}>
-                {PLATFORMS.find(p => p.id === post.platform)?.icon} {PLATFORMS.find(p => p.id === post.platform)?.name}
-              </span>
+            {/* Post Selection Checkbox */}
+            {post.status === 'completed' && (
+              <input
+                type="checkbox"
+                checked={selectedPosts.includes(post.id)}
+                onChange={() => togglePostSelection(post.id)}
+                className="w-4 h-4 text-blue-600 bg-slate-700 border-slate-600 rounded focus:ring-blue-500"
+              />
+            )}
+            <div>
+              <h4 className="font-medium text-dark-text">
+                <span className={businessInfo?.color}>{businessInfo?.name}</span>
+                {' • '}
+                <span className={platformInfo?.color}>
+                  {platformInfo?.icon} {platformInfo?.name}
+                </span>
+              </h4>
+              <div className="text-sm text-dark-text-muted">
+                {dayTheme?.emoji} {dayTheme?.theme} • {dayTheme?.focus}
+              </div>
             </div>
           </div>
-          
-          <div className="flex items-center gap-2">
-            {post.templateUsed && (
-              <span className="text-xs bg-blue-900/30 text-blue-300 px-2 py-1 rounded">
-                {post.templateUsed}
-              </span>
-            )}
-            <div className={`w-3 h-3 rounded-full ${
-              post.status === 'completed' ? 'bg-green-400' :
-              post.status === 'generating' ? 'bg-blue-400 animate-pulse' :
-              post.status === 'error' ? 'bg-red-400' :
-              'bg-gray-400'
-            }`}></div>
-          </div>
+          <span className={`text-sm font-medium ${getStatusColor(post.status)}`}>
+            {post.status === 'generating' && '⏳ Generating...'}
+            {post.status === 'completed' && '✅ Ready'}
+            {post.status === 'error' && '❌ Error'}
+            {post.status === 'editing' && '✏️ Editing'}
+            {post.status === 'posted' && '🚀 Posted'}
+            {post.status === 'scheduled' && '📅 Scheduled'}
+          </span>
         </div>
 
-        {/* Content Display/Editing */}
-        {editingPost === post.id ? (
-          <div className="space-y-3">
-            <textarea
-              value={editContent}
-              onChange={(e) => setEditContent(e.target.value)}
-              className="w-full p-3 bg-gray-900/50 border border-gray-600 rounded text-dark-text text-sm"
-              rows={4}
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={() => saveEdit(post.id)}
-                className="btn btn-primary btn-sm"
-              >
-                💾 Save
-              </button>
-              <button
-                onClick={cancelEdit}
-                className="btn btn-outline btn-sm"
-              >
-                ❌ Cancel
-              </button>
-            </div>
+        {post.status === 'generating' ? (
+          <div className="flex items-center gap-2 text-dark-text-muted">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-yellow-400"></div>
+            <span>Generating content...</span>
           </div>
         ) : (
-          <>
-            <div className="bg-gray-900/50 rounded p-3 mb-3 text-sm text-dark-text whitespace-pre-wrap">
-              {post.content || 'Generating...'}
-            </div>
-            
-            {/* ENHANCED: Image Display with Thumbnail and Selection - FIXED */}
-            {post.suggestedImageUrl && (
-              <div className="mb-3">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-xs text-green-400">📷 Suggested Image:</div>
-                  {hasImageAlternatives && (
-                    <button
-                      onClick={() => setShowImageSelector(showImageSelector === post.id ? null : post.id)}
-                      className="text-xs text-blue-400 hover:text-blue-300 transition-colors"
-                    >
-                      {showImageSelector === post.id ? '✖ Close' : '🔄 Change Image'}
-                    </button>
+          <div className="space-y-3">
+            {/* Content */}
+            <div className="mb-3">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-dark-text">Content</span>
+                <div className="text-xs space-x-2">
+                  <span className={`${
+                    post.characterCount <= 100 ? 'text-green-400' : 
+                    post.characterCount <= (platformInfo?.charLimit || 1000) ? 'text-yellow-400' : 'text-red-400'
+                  }`}>
+                    {post.characterCount}/{platformInfo?.charLimit || 1000}
+                  </span>
+                  {post.platform === 'twitter' && (
+                    <span className={`${
+                      post.characterCount <= 280 ? 'text-green-400' : 'text-red-400'
+                    }`}>
+                      Twitter: {post.characterCount <= 280 ? '✅' : '❌'}
+                    </span>
                   )}
                 </div>
-                
-                <div className="relative">
-                  {/* Main Image Thumbnail */}
-                  <div className="relative w-full max-w-sm mx-auto">
-                    <Image
-                      src={post.suggestedImageUrl}
-                      alt={post.imageDescription || 'Suggested content image'}
-                      width={300}
-                      height={200}
-                      className="rounded-lg object-cover border border-gray-600"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none'
-                      }}
-                    />
-                    {post.imageDescription && (
-                      <div className="text-xs text-gray-400 mt-1 text-center">
-                        {post.imageDescription}
-                      </div>
-                    )}
-                  </div>
-                  
-                  {/* Image Selection Dropdown - FIXED */}
-                  {showImageSelector === post.id && hasImageAlternatives && (
-                    <div className="absolute top-0 left-0 right-0 bg-slate-900/95 backdrop-blur border border-gray-600 rounded-lg p-3 z-10">
-                      <div className="text-xs text-gray-300 mb-2">Select alternative image:</div>
-                      <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
-                        {/* Current Image */}
-                        <div className="relative border-2 border-blue-500 rounded p-1">
-                          <Image
-                            src={post.suggestedImageUrl}
-                            alt="Current"
-                            width={80}
-                            height={60}
-                            className="rounded object-cover"
-                          />
-                          <div className="absolute top-0 right-0 bg-blue-500 text-white text-xs px-1 rounded-bl">
-                            Current
-                          </div>
-                          <div className="text-xs text-gray-300 mt-1 truncate">
-                            {post.imageDescription?.substring(0, 20)}...
-                          </div>
-                        </div>
-                        
-                        {/* Alternative Images - FIXED */}
-                        {post.imageAlternatives && post.imageAlternatives.map((image, index) => (
-                          <button
-                            key={image.id || index}
-                            onClick={() => changePostImage(
-                              post.id, 
-                              image.cloudUrl, 
-                              image.id, 
-                              image.aiDescription || image.originalName
-                            )}
-                            disabled={loadingImageChange === post.id}
-                            className="relative border border-gray-600 hover:border-blue-400 rounded p-1 transition-colors"
-                          >
-                            <Image
-                              src={image.thumbnailUrl || image.cloudUrl}
-                              alt={image.originalName || `Alternative ${index + 1}`}
-                              width={80}
-                              height={60}
-                              className="rounded object-cover"
-                            />
-                            {loadingImageChange === post.id && (
-                              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                                <div className="text-white text-xs">...</div>
-                              </div>
-                            )}
-                            <div className="text-xs text-gray-300 mt-1 truncate">
-                              {(image.aiDescription || image.originalName)?.substring(0, 20)}...
-                            </div>
-                          </button>
-                        ))}
-                      </div>
+              </div>
+              
+              <textarea
+                value={post.content}
+                onChange={(e) => editPost(post.id, e.target.value)}
+                disabled={post.status === 'error'}
+                className="w-full h-32 p-3 bg-gray-800 border border-gray-600 rounded text-dark-text resize-none focus:border-blue-400 focus:outline-none"
+                placeholder="Generated content will appear here..."
+              />
+            </div>
+
+            {/* Monthly Specials */}
+            {post.monthlySpecials && post.monthlySpecials.length > 0 && (
+              <div className="mb-3">
+                <span className="text-sm font-medium text-dark-text mb-2 block">Included Specials</span>
+                <div className="space-y-1">
+                  {post.monthlySpecials.map((special, idx) => (
+                    <div key={idx} className="text-xs text-green-400 bg-green-900/20 rounded px-2 py-1">
+                      🎯 {special}
                     </div>
-                  )}
+                  ))}
                 </div>
               </div>
             )}
 
-            {/* Fallback for when image URL isn't available but description exists */}
-            {!post.suggestedImageUrl && post.suggestedImage && (
-              <div className="mb-3 p-2 bg-yellow-900/20 border border-yellow-600/30 rounded text-xs">
-                <span className="text-yellow-400">📷 Image suggested:</span>
-                <span className="text-gray-300 ml-2">{post.suggestedImage}</span>
-                <div className="text-yellow-300 mt-1">
-                  ⚠️ Upload matching images to business settings to display actual images
+            {/* Enhanced metadata display with Twitter-specific feedback */}
+            {post.metadata && (
+              <div className="text-xs text-dark-text-muted space-y-1">
+                <div>Template: {post.templateUsed}</div>
+                {post.metadata.selectedImages && (
+                  <div>Images: {post.metadata.selectedImages}</div>
+                )}
+                {post.attemptsUsed && post.attemptsUsed > 1 && (
+                  <div className="text-yellow-400">
+                    Generated in {post.attemptsUsed} attempts 
+                    {post.platform === 'twitter' && ' (Twitter character limit enforcement)'}
+                  </div>
+                )}
+                {post.scheduledDate && (
+                  <div className="text-blue-400">
+                    Scheduled: {new Date(post.scheduledDate).toLocaleString()}
+                  </div>
+                )}
+                {post.metadata.rotationStats && Object.keys(post.metadata.rotationStats).length > 0 && (
+                  <div className="text-green-400">
+                    Rotation: {JSON.stringify(post.metadata.rotationStats[post.business] || 'N/A')}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Image Section */}
+            {post.suggestedImageUrl ? (
+              <div className="mb-3">
+                <span className="text-sm font-medium text-dark-text mb-2 block">Suggested Image</span>
+                <div className="flex items-start gap-3">
+                  <div className="w-20 h-20 relative rounded overflow-hidden bg-gray-800 flex-shrink-0">
+                    <Image
+                      src={post.suggestedImageUrl}
+                      alt={post.imageDescription || 'Suggested image'}
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-xs text-dark-text-muted mb-2">
+                      {post.imageDescription || 'AI-selected image'}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openImageSelector(post.id)}
+                        className="text-xs text-blue-400 hover:text-blue-300 px-2 py-1 bg-blue-900/20 rounded"
+                      >
+                        🖼️ Change Image
+                      </button>
+                      {post.imageAlternatives && post.imageAlternatives.length > 0 && (
+                        <span className="text-xs text-slate-400">
+                          +{post.imageAlternatives.length} more options
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : post.status === 'completed' && (
+              <div className="mb-3">
+                <span className="text-sm font-medium text-dark-text mb-2 block">Image</span>
+                <div className="text-xs text-dark-text-muted">
+                  No image suggested for this post
                 </div>
               </div>
             )}
-            
-            {/* Enhanced metadata display */}
-            <div className="text-xs text-dark-text-muted space-y-1">
-              <div className="flex items-center justify-between">
-                <span>{post.characterCount} chars</span>
-                <span className={post.withinLimits ? 'text-green-400' : 'text-red-400'}>
-                  {post.withinLimits ? '✓ Within limits' : '⚠️ Over limit'}
-                </span>
-              </div>
-              
-              {post.monthlySpecials?.length && (
-                <div className={`text-sm ${post.specialsIncluded ? 'text-blue-400' : 'text-yellow-400'}`}>
-                  🎯 Specials: {post.monthlySpecials.length} {post.specialsIncluded ? 'included' : 'available'}
-                </div>
-              )}
-              
-              {hasImageAlternatives && (
-                <div className="text-xs text-gray-400">
-                  🖼️ {post.imageAlternatives!.length + 1} images available
-                </div>
-              )}
-              
-              {post.isEdited && (
-                <div className="text-yellow-400">✏️ Manually edited</div>
-              )}
-            </div>
-            
-            {post.status === 'completed' && (
-              <div className="flex gap-2 mt-3">
-                <button
-                  onClick={() => startEditing(post)}
-                  className="btn btn-outline btn-sm"
-                >
-                  ✏️ Edit
-                </button>
-                <button
-                  onClick={() => regeneratePost(post)}
-                  className="btn btn-outline btn-sm"
-                >
-                  🔄 Regenerate
-                </button>
-                <button
-                  onClick={() => navigator.clipboard.writeText(post.content)}
-                  className="btn btn-outline btn-sm"
-                >
-                  📋 Copy
-                </button>
-              </div>
-            )}
-            
-            {post.status === 'error' && (
-              <button
-                onClick={() => regeneratePost(post)}
-                className="btn btn-outline btn-sm text-red-400 mt-3"
-              >
-                🔄 Retry Generation
-              </button>
-            )}
-          </>
+          </div>
         )}
+
+        {/* Actions */}
+        <div className="flex gap-2 mt-4">
+          <button
+            onClick={() => regeneratePost(post.id)}
+            disabled={post.status === 'generating'}
+            className="btn btn-secondary btn-sm"
+          >
+            {post.status === 'generating' ? '⏳ Generating...' : '🔄 Regenerate'}
+          </button>
+          
+          {post.status === 'completed' && (
+            <>
+              <button
+                onClick={() => postNow(post.id)}
+                disabled={postingInProgress === post.id}
+                className="btn btn-primary btn-sm"
+              >
+                {postingInProgress === post.id ? '📤 Posting...' : '📤 Post Now'}
+              </button>
+              
+              <button
+                onClick={() => setSchedulingPost(post.id)}
+                className="btn btn-secondary btn-sm"
+              >
+                📅 Schedule
+              </button>
+            </>
+          )}
+        </div>
+
+        <div className="text-xs text-dark-text-muted mt-2">
+          Platform: {platformInfo?.name} | Sweet spot: {platformInfo?.sweet} chars
+        </div>
       </div>
     )
   }
 
-  // Loading state
-  if (!capabilities) {
+  if (loading) {
     return (
-      <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={false}>
-        <div className="text-center py-8">
-          <p className="text-dark-text-muted">Loading AI capabilities...</p>
-        </div>
-      </CollapsibleSection>
-    )
-  }
-
-  // Not configured state
-  if (!capabilities.isConfigured) {
-    return (
-      <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={false}>
-        <div className="bg-red-900/20 border border-red-600 rounded-lg p-4">
-          <h3 className="text-red-400 font-semibold mb-2">⚠️ AI Service Not Configured</h3>
-          <p className="text-red-300 text-sm">
-            Please add your API key to enable AI content generation.
-          </p>
+      <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={true}>
+        <div className="flex items-center gap-3 p-8">
+          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
+          <span className="text-dark-text">Loading AI capabilities...</span>
         </div>
       </CollapsibleSection>
     )
   }
 
   return (
-    <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={false}>
+    <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={true}>
       <div className="space-y-6">
-        
-        {/* Business Selection */}
-        <div className="bg-slate-800/30 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-dark-text mb-4">🏢 Select Businesses</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {BUSINESSES.map(business => (
-              <label key={business.id} className="flex items-center gap-3 p-3 bg-slate-700/30 rounded-lg cursor-pointer hover:bg-slate-700/50 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={selectedBusinesses.includes(business.id)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedBusinesses([...selectedBusinesses, business.id])
-                    } else {
-                      setSelectedBusinesses(selectedBusinesses.filter(id => id !== business.id))
-                    }
-                  }}
-                  className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded focus:ring-accent-blue"
-                />
-                <span className={`font-medium ${business.color}`}>{business.name}</span>
-                {settingsLoading && selectedBusinesses.includes(business.id) && (
-                  <span className="text-xs text-blue-400">Loading settings...</span>
-                )}
-                {businessSettings[business.id]?.isConfigured && (
-                  <span className="text-xs text-green-400">✓ Enhanced</span>
-                )}
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* Platform Selection */}
-        <div className="bg-slate-800/30 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-dark-text mb-4">📱 Select Platforms</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {PLATFORMS.map(platform => (
-              <label key={platform.id} className="flex items-center gap-3 p-3 bg-slate-700/30 rounded-lg cursor-pointer hover:bg-slate-700/50 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={selectedPlatforms.includes(platform.id)}
-                  onChange={(e) => {
-                    if (e.target.checked) {
-                      setSelectedPlatforms([...selectedPlatforms, platform.id])
-                    } else {
-                      setSelectedPlatforms(selectedPlatforms.filter(id => id !== platform.id))
-                    }
-                  }}
-                  className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded focus:ring-accent-blue"
-                />
-                <span className="text-xl">{platform.icon}</span>
-                <div className="flex-1">
-                  <div className={`font-medium ${platform.color}`}>{platform.name}</div>
-                  <div className="text-xs text-dark-text-muted">
-                    {platform.charLimit} chars max • Sweet spot: {platform.sweet}
-                  </div>
-                </div>
-              </label>
-            ))}
-          </div>
-        </div>
-
-        {/* Generation Options */}
-        <div className="bg-slate-800/30 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-dark-text mb-4">⚙️ Generation Options</h3>
+        {/* Strategic Configuration */}
+        <div className="bg-slate-900/30 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-dark-text mb-4">📋 Content Strategy</h3>
           
-          <div className="space-y-4">
-            {/* Timeframe Selection */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Business Selection */}
             <div>
-              <label className="block text-dark-text font-medium mb-3">Timeframe</label>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {TIMEFRAME_OPTIONS.map(option => (
-                  <label key={option.id} className="flex items-center gap-3 p-3 bg-slate-700/30 rounded-lg cursor-pointer hover:bg-slate-700/50 transition-colors">
+              <label className="block text-dark-text-secondary text-sm mb-3">
+                Select Businesses
+              </label>
+              <div className="space-y-2">
+                {BUSINESSES.map(business => (
+                  <label key={business.id} className="flex items-center gap-2 cursor-pointer">
                     <input
-                      type="radio"
-                      name="timeframe"
-                      value={option.id}
-                      checked={selectedTimeframe === option.id}
-                      onChange={(e) => setSelectedTimeframe(e.target.value)}
-                      className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 focus:ring-accent-blue"
+                      type="checkbox"
+                      checked={selectedBusinesses.includes(business.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedBusinesses(prev => [...prev, business.id])
+                        } else {
+                          setSelectedBusinesses(prev => prev.filter(id => id !== business.id))
+                        }
+                      }}
+                      className="checkbox-dark"
                     />
-                    <div className="flex-1">
-                      <div className="font-medium text-dark-text">{option.name}</div>
-                      <div className="text-xs text-dark-text-muted">{option.description}</div>
-                    </div>
+                    <span className={`${business.color} font-medium`}>
+                      {business.name}
+                    </span>
                   </label>
                 ))}
               </div>
-              
-              {selectedTimeframe === 'custom' && (
-                <div className="mt-3">
-                  <label className="block text-dark-text-secondary text-sm mb-2">
-                    Number of Posts
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={customPostCount}
-                    onChange={(e) => setCustomPostCount(parseInt(e.target.value))}
-                    className="form-control w-32"
-                  />
-                </div>
-              )}
             </div>
 
-            {/* Month Selection */}
+            {/* Platform Selection */}
             <div>
-              <label className="block text-dark-text font-medium mb-2">Month</label>
-              <select
-                value={currentMonth}
-                onChange={(e) => setCurrentMonth(parseInt(e.target.value))}
-                className="form-control w-48"
-              >
-                {Array.from({ length: 12 }, (_, i) => (
-                  <option key={i} value={i}>
-                    {new Date(2025, i).toLocaleString('default', { month: 'long' })}
-                  </option>
+              <label className="block text-dark-text-secondary text-sm mb-3">
+                Select Platforms
+              </label>
+              <div className="space-y-2">
+                {PLATFORMS.map(platform => (
+                  <label key={platform.id} className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={selectedPlatforms.includes(platform.id)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedPlatforms(prev => [...prev, platform.id])
+                        } else {
+                          setSelectedPlatforms(prev => prev.filter(id => id !== platform.id))
+                        }
+                      }}
+                      className="checkbox-dark"
+                    />
+                    <span className={`${platform.color} font-medium`}>
+                      {platform.icon} {platform.name}
+                    </span>
+                    <span className="text-xs text-dark-text-muted ml-2">
+                      ({platform.sweet} chars ideal)
+                    </span>
+                  </label>
                 ))}
-              </select>
-            </div>
-
-            {/* Additional Options */}
-            <div className="flex flex-wrap gap-4">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={generatePerPlatform}
-                  onChange={(e) => setGeneratePerPlatform(e.target.checked)}
-                  className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded focus:ring-accent-blue"
-                />
-                <span className="text-dark-text-secondary">Generate separate content per platform</span>
-              </label>
-              
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={includeImages}
-                  onChange={(e) => setIncludeImages(e.target.checked)}
-                  className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded focus:ring-accent-blue"
-                />
-                <span className="text-dark-text-secondary">Include image suggestions</span>
-              </label>
-              
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={includeSpecials}
-                  onChange={(e) => setIncludeSpecials(e.target.checked)}
-                  className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded focus:ring-accent-blue"
-                />
-                <span className="text-dark-text-secondary">Include monthly specials</span>
-              </label>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Generation Controls */}
-        <div className="bg-slate-800/30 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-dark-text">🚀 Generate Content</h3>
-            {isGeneratingWeek && (
-              <div className="text-dark-text-secondary text-sm">
-                {generationProgress.current} / {generationProgress.total} posts
+          {/* Template Selection */}
+          <div className="mt-6">
+            <label className="block text-dark-text-secondary text-sm mb-3">
+              Content Templates
+            </label>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
+              {AVAILABLE_TEMPLATES.map(template => (
+                <label key={template.id} className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedTemplates.includes(template.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedTemplates(prev => [...prev, template.id])
+                      } else {
+                        setSelectedTemplates(prev => prev.filter(id => id !== template.id))
+                      }
+                    }}
+                    className="checkbox-dark"
+                  />
+                  <div>
+                    <span className="text-sm font-medium text-dark-text">
+                      {template.name}
+                    </span>
+                    <div className="text-xs text-dark-text-muted">
+                      {template.description}
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Timeframe Selection */}
+          <div className="mt-6">
+            <label className="block text-dark-text-secondary text-sm mb-3">
+              Content Generation Timeframe
+            </label>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {['1-week', '2-week', '1-month', 'custom'].map(timeframe => (
+                <label key={timeframe} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="timeframe"
+                    value={timeframe}
+                    checked={selectedTimeframe === timeframe}
+                    onChange={(e) => setSelectedTimeframe(e.target.value)}
+                    className="rounded-full"
+                  />
+                  <span className="text-sm text-dark-text capitalize">
+                    {timeframe.replace('-', ' ')}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {selectedTimeframe === 'custom' && (
+              <div className="grid grid-cols-2 gap-4 mt-3">
+                <div>
+                  <label className="block text-xs text-dark-text-muted mb-1">Start Date</label>
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="form-control"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-dark-text-muted mb-1">End Date</label>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="form-control"
+                  />
+                </div>
               </div>
             )}
           </div>
-          
-          <div className="flex gap-4">
+
+          {/* Debug Information */}
+          <div className="mt-6 p-4 bg-gray-800/50 rounded border border-gray-600">
+            <h4 className="font-semibold text-dark-text mb-2">🔧 Debug Information</h4>
+            <div className="text-xs text-dark-text-muted space-y-1">
+              <div>Selected Businesses: {selectedBusinesses.join(', ')}</div>
+              <div>Selected Platforms: {selectedPlatforms.join(', ')}</div>
+              <div>Settings Loading: {settingsLoading ? 'Yes' : 'No'}</div>
+              <div>Date Range: {selectedTimeframe}</div>
+              <div>Include Specials: TRUE (forced)</div>
+              <div>Expected Posts: {getExpectedPostCount()}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Generate Content */}
+        <div className="bg-slate-900/30 rounded-lg p-6">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="text-lg font-semibold text-dark-text">
+              🎯 Generate Content ({getExpectedPostCount()} posts)
+            </h3>
+            
             <button
-              onClick={generateWeeklyContent}
+              onClick={generateWeekOfContent}
               disabled={isGeneratingWeek || selectedBusinesses.length === 0 || selectedPlatforms.length === 0}
               className="btn btn-primary"
             >
-              {isGeneratingWeek ? '🤖 Generating...' : `🤖 Generate ${getPostCount()} Posts`}
+              {isGeneratingWeek 
+                ? `⏳ Generating... (${generationProgress.current}/${generationProgress.total})`
+                : '🚀 Generate Week of Content'
+              }
             </button>
-            
-            {weeklyPosts.length > 0 && (
-              <button
-                onClick={() => setWeeklyPosts([])}
-                disabled={isGeneratingWeek}
-                className="btn btn-outline"
-              >
-                🗑️ Clear All
-              </button>
-            )}
           </div>
-          
-          {isGeneratingWeek && generationProgress.total > 0 && (
-            <div className="mt-4">
-              <div className="bg-gray-700 rounded-full h-2">
-                <div 
-                  className="bg-accent-blue h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
-                ></div>
+
+          {/* Progress Bar */}
+          {isGeneratingWeek && (
+            <div className="mb-4">
+              <div className="bg-slate-800 rounded-full h-2 mb-2">
+                <div
+                  className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                  style={{
+                    width: `${(generationProgress.current / generationProgress.total) * 100}%`
+                  }}
+                />
+              </div>
+              <div className="text-xs text-dark-text-muted text-center">
+                Generating post {generationProgress.current} of {generationProgress.total}
               </div>
             </div>
           )}
         </div>
 
-        {/* Debug Information (development mode) */}
+        {/* Generated Posts */}
         {weeklyPosts.length > 0 && (
-          <div className="bg-slate-800/30 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-dark-text mb-4">
-              🔍 Debug Information
-            </h3>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div className="bg-slate-700/30 rounded p-3">
-                <h4 className="font-medium text-dark-text mb-2">Monthly Specials Status</h4>
-                {selectedBusinesses.map(business => {
-                  const specials = getMonthlySpecials(business)
-                  const hasAnySpecials = monthlySpecials[business] && Object.keys(monthlySpecials[business]).length > 0
-                  return (
-                    <div key={business} className="mb-2">
-                      <div className="text-blue-400">{BUSINESSES.find(b => b.id === business)?.name}:</div>
-                      <div className="text-dark-text-muted pl-2">
-                        {!hasAnySpecials ? (
-                          <div className="text-yellow-400 text-xs">
-                            ⚠️ No specials in database. Visit Settings → Monthly Specials to add them.
-                          </div>
-                        ) : specials.length > 0 ? (
-                          <ul className="list-disc list-inside">
-                            {specials.slice(0, 2).map((special, i) => (
-                              <li key={i} className="text-xs">{special}</li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <div className="text-red-400 text-xs">
-                            No specials for {new Date(2025, currentMonth).toLocaleString('default', { month: 'long' })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
+          <div className="space-y-4">
+            {/* Header with Schedule Controls */}
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <h3 className="text-lg font-semibold text-dark-text">
+                  📝 Generated Posts ({weeklyPosts.length})
+                </h3>
+                
+                {/* Post Selection Controls */}
+                {weeklyPosts.filter(p => p.status === 'completed').length > 0 && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <button
+                      onClick={selectAllPosts}
+                      className="text-blue-400 hover:text-blue-300"
+                    >
+                      Select All
+                    </button>
+                    <span className="text-slate-400">|</span>
+                    <button
+                      onClick={clearPostSelection}
+                      className="text-slate-400 hover:text-slate-300"
+                    >
+                      Clear
+                    </button>
+                    {selectedPosts.length > 0 && (
+                      <span className="text-blue-400 ml-2">
+                        ({selectedPosts.length} selected)
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
               
-              <div className="bg-slate-700/30 rounded p-3">
-                <h4 className="font-medium text-dark-text mb-2">Generation Settings</h4>
-                <div className="text-dark-text-muted text-xs space-y-1">
-                  <div>Month: {new Date(2025, currentMonth).toLocaleString('default', { month: 'long' })}</div>
-                  <div>Templates: {selectedTemplates.join(', ')}</div>
-                  <div>Include Specials: {includeSpecials ? '✅' : '❌'}</div>
-                  <div>Include Images: {includeImages ? '✅' : '❌'}</div>
-                  <div>Per Platform: {generatePerPlatform ? '✅' : '❌'}</div>
+              {weeklyPosts.filter(p => p.status === 'completed').length > 0 && (
+                <div className="flex items-center gap-3">
+                  {/* Smart Schedule Controls */}
+                  <div className="flex items-center gap-2 text-sm">
+                    <label className="text-dark-text-muted">Start from:</label>
+                    <input
+                      type="date"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      className="form-control !text-xs !py-1 !px-2"
+                    />
+                  </div>
+                  
+                  {/* Schedule Selected Button */}
+                  {selectedPosts.length > 0 && (
+                    <button
+                      onClick={scheduleSelectedPosts}
+                      disabled={isGeneratingWeek || !scheduleDate}
+                      className="btn btn-primary btn-sm"
+                    >
+                      {isGeneratingWeek 
+                        ? `⏳ Scheduling...`
+                        : `📅 Schedule Selected (${selectedPosts.length})`
+                      }
+                    </button>
+                  )}
+                  
+                  {/* Schedule All Button */}
+                  <button
+                    onClick={scheduleAllPosts}
+                    disabled={isGeneratingWeek || !scheduleDate}
+                    className="btn btn-success btn-sm"
+                  >
+                    {isGeneratingWeek 
+                      ? `⏳ Scheduling... (${generationProgress.current}/${generationProgress.total})`
+                      : `📅 Smart Schedule All (${weeklyPosts.filter(p => p.status === 'completed').length})`
+                    }
+                  </button>
                 </div>
+              )}
+            </div>
+            
+            {/* Posts List */}
+            <div className="space-y-4">
+              {weeklyPosts.map(renderPost)}
+            </div>
+            
+            {/* Smart Schedule Info */}
+            {weeklyPosts.filter(p => p.status === 'completed').length > 0 && (
+              <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-3">
+                <div className="text-sm text-green-300">
+                  🧠 <strong>Smart Schedule</strong> uses your business posting schedule settings:
+                  <br />
+                  • Posts will be scheduled on your configured days/times for each platform
+                  • Respects your posts-per-day limits and optimal timing preferences  
+                  • Falls back to 2-hour spacing if more posts than scheduled slots
+                  <br />
+                  Completed posts: {weeklyPosts.filter(p => p.status === 'completed').length} | 
+                  Already scheduled: {weeklyPosts.filter(p => p.status === 'scheduled').length}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Enhanced Image Selector Modal */}
+        {showImageSelector && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-slate-800 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-dark-text">🖼️ Select Image</h3>
+                <button
+                  onClick={() => setShowImageSelector(null)}
+                  className="text-slate-400 hover:text-slate-300"
+                >
+                  ✕
+                </button>
+              </div>
+              
+              {/* Search Bar */}
+              <div className="mb-4">
+                <input
+                  type="text"
+                  placeholder="Search images by keywords (HVAC, plumbing, electrical, etc.)"
+                  value={imageSearchQuery}
+                  onChange={(e) => searchImages(e.target.value)}
+                  className="form-control w-full"
+                />
+              </div>
+              
+              {(() => {
+                const post = weeklyPosts.find(p => p.id === showImageSelector)
+                const allImages = [
+                  // Current image first if exists
+                  ...(post?.suggestedImageUrl ? [{ 
+                    url: post.suggestedImageUrl, 
+                    description: post.imageDescription || 'Current image',
+                    isCurrent: true 
+                  }] : []),
+                  // AI suggested alternatives
+                  ...(post?.imageAlternatives || []).map((img: any) => ({ 
+                    ...img, 
+                    isAlternative: true 
+                  })),
+                  // Business library images
+                  ...availableImages.map((img: any) => ({
+                    url: img.url || img.originalUrl,
+                    description: img.description || img.fileName || 'Library image',
+                    tags: img.tags,
+                    isLibrary: true
+                  }))
+                ]
+
+                return allImages.length > 0 ? (
+                  <div className="space-y-4">
+                    {/* Current/AI Images Section */}
+                    {(post?.suggestedImageUrl || (post?.imageAlternatives && post.imageAlternatives.length > 0)) && (
+                      <div>
+                        <h4 className="text-sm font-medium text-slate-300 mb-2">AI Suggested Images</h4>
+                        <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
+                          {allImages.filter(img => img.isCurrent || img.isAlternative).map((image: any, index: number) => (
+                            <div 
+                              key={`ai-${index}`}
+                              className={`cursor-pointer transition-all duration-200 rounded-lg overflow-hidden ${
+                                image.isCurrent 
+                                  ? 'ring-2 ring-green-500' 
+                                  : 'hover:ring-2 hover:ring-blue-400'
+                              }`}
+                              onClick={() => selectSuggestedImage(post.id, image.url)}
+                            >
+                              <div className="w-full h-20 relative bg-slate-700">
+                                <Image
+                                  src={image.url}
+                                  alt={image.description || `AI option ${index + 1}`}
+                                  fill
+                                  className="object-cover"
+                                />
+                                {image.isCurrent && (
+                                  <div className="absolute top-1 right-1 bg-green-500 text-white text-xs px-1 rounded">
+                                    Current
+                                  </div>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-300 p-1 text-center truncate">
+                                {image.description || `Option ${index + 1}`}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Library Images Section */}
+                    {availableImages.length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-slate-300 mb-2">
+                          Business Library Images ({availableImages.length})
+                        </h4>
+                        <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
+                          {availableImages.map((image: any, index: number) => (
+                            <div 
+                              key={`lib-${image.id || index}`}
+                              className="cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all duration-200 rounded-lg overflow-hidden"
+                              onClick={() => selectSuggestedImage(post?.id || '', image.url || image.originalUrl)}
+                            >
+                              <div className="w-full h-20 relative bg-slate-700">
+                                <Image
+                                  src={image.url || image.originalUrl}
+                                  alt={image.description || image.fileName || `Library image ${index + 1}`}
+                                  fill
+                                  className="object-cover"
+                                />
+                              </div>
+                              <p className="text-xs text-slate-300 p-1 text-center truncate">
+                                {image.description || image.fileName || `Image ${index + 1}`}
+                              </p>
+                              {image.tags && image.tags.length > 0 && (
+                                <p className="text-xs text-slate-400 px-1 pb-1 text-center">
+                                  {image.tags.slice(0, 2).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {availableImages.length === 0 && !post?.imageAlternatives?.length && (
+                      <div className="text-center py-8">
+                        <p className="text-slate-400 mb-2">No images found</p>
+                        <p className="text-xs text-slate-500">
+                          Try adjusting your search terms or upload images to your business library
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-slate-400 mb-2">Loading images...</p>
+                  </div>
+                )
+              })()}
+              
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  onClick={() => setShowImageSelector(null)}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Generated Posts */}
-        {weeklyPosts.length > 0 && (
-          <div className="bg-slate-800/30 rounded-lg p-6">
-            <h3 className="text-lg font-semibold text-dark-text mb-4">
-              📝 Generated Posts ({weeklyPosts.length})
-            </h3>
-            
-            <div className="space-y-4">
-              {weeklyPosts.map(renderPost)}
+        {/* Schedule Modal */}
+        {schedulingPost && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-slate-800 rounded-lg p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-semibold text-dark-text mb-4">📅 Schedule Post</h3>
+              
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-dark-text-secondary text-sm mb-2">
+                    Date
+                  </label>
+                  <input
+                    type="date"
+                    value={scheduleDate}
+                    onChange={(e) => setScheduleDate(e.target.value)}
+                    className="form-control"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-dark-text-secondary text-sm mb-2">
+                    Time
+                  </label>
+                  <input
+                    type="time"
+                    value={scheduleTime}
+                    onChange={(e) => setScheduleTime(e.target.value)}
+                    className="form-control"
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={() => schedulePost(schedulingPost)}
+                  className="btn btn-primary flex-1"
+                >
+                  📅 Schedule Post
+                </button>
+                <button
+                  onClick={() => setSchedulingPost(null)}
+                  className="btn btn-secondary"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         )}

@@ -2,11 +2,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { Storage } from '@google-cloud/storage'
+import { getGoogleCredentials } from '@/lib/google-credentials'
 
 // Initialize Google Cloud Storage
 const storage = new Storage({
   projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-  credentials: process.env.GOOGLE_CLOUD_CREDENTIALS ? JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS) : undefined
+  credentials: getGoogleCredentials() || undefined
 })
 
 const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET || 'sosh-images'

@@ -7,6 +7,7 @@ import ContentBlocksManager from '@/components/settings/ContentBlocksManager'
 import MonthlySpecialsManager from '@/components/settings/MonthlySpecialsManager'
 import DailyThemeStrategy from '@/components/settings/DailyThemeStrategy'
 import ImageLibraryManager from '@/components/settings/ImageLibraryManager'
+import PostingScheduleManager from '@/components/settings/PostingScheduleManager'
 
 export default async function SettingsPage() {
   const session = await auth()
@@ -49,6 +50,11 @@ export default async function SettingsPage() {
             <BusinessProfileManager />
           </section>
 
+          {/* Posting Schedule Manager */}
+          <section>
+            <PostingScheduleManager />
+          </section>
+          
           {/* Monthly Specials */}
           <section>
             <MonthlySpecialsManager />

@@ -40,9 +40,19 @@ export default function Header() {
     })
   }
 
+  const handleNavigation = (path: string) => {
+    setIsUserMenuOpen(false)
+    router.push(path)
+  }
+
   const handleSettingsClick = () => {
     setIsUserMenuOpen(false)
     router.push('/settings')
+  }
+
+  const handleCalendarClick = () => {
+    setIsUserMenuOpen(false)
+    router.push('/calendar')
   }
 
   const getDropdownPosition = () => {
@@ -74,18 +84,27 @@ export default function Header() {
       </div>
       
       <button
+        onClick={handleCalendarClick}
+        className="block w-full text-left px-3 py-2 text-sm text-dark-text hover:bg-slate-700/50 transition-colors"
+      >
+        📅 Calendar
+      </button>
+      
+      <button
         onClick={handleSettingsClick}
         className="block w-full text-left px-3 py-2 text-sm text-dark-text hover:bg-slate-700/50 transition-colors"
       >
         ⚙️ Settings
       </button>
       
-      <button
-        onClick={handleSignOut}
-        className="w-full text-left px-3 py-2 text-sm text-dark-text hover:bg-slate-700/50 transition-colors"
-      >
-        🚪 Sign Out
-      </button>
+      <div className="border-t border-dark-border mt-1 pt-1">
+        <button
+          onClick={handleSignOut}
+          className="w-full text-left px-3 py-2 text-sm text-dark-text hover:bg-slate-700/50 transition-colors"
+        >
+          🚪 Sign Out
+        </button>
+      </div>
     </div>
   ) : null
 

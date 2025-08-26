@@ -133,7 +133,7 @@ model BusinessProfile {
   // Seasonal & Special Settings
   seasonalSettings Json?    // Winter/summer messaging preferences
   holidaySettings  Json?    // Holiday-specific content rules
-  
+  postingSchedule  Json?    // Per-platform posting frequency and timing
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

@@ -1,523 +1,939 @@
-// Enhanced API Route: /api/ai/generate-enhanced-content/route.ts
-
+// src/app/api/ai/generate-enhanced-content/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { settingsAggregator } from '@/lib/settings-aggregator'
 import { getEnhancedRelevantImages } from '@/lib/enhanced-image-matcher'
+import { prisma } from '@/lib/prisma'
 
-// Helper function to determine current season (Dallas, TX climate)
+// Daily themes for content structure
+const DAILY_THEMES = {
+  monday: { theme: 'Monday Motivation', focus: 'Start week strong with service highlights', emoji: '💪' },
+  tuesday: { theme: 'Tuesday Tips', focus: 'Educational HVAC/plumbing/electrical tips', emoji: '💡' },
+  wednesday: { theme: 'Wednesday Specials', focus: 'Mid-week promotional offers', emoji: '🎯' },
+  thursday: { theme: 'Thursday Maintenance', focus: 'Maintenance reminders and safety tips', emoji: '🔧' },
+  friday: { theme: 'Friday Prep', focus: 'Weekend preparation and emergency service', emoji: '🏠' },
+  saturday: { theme: 'Saturday Solutions', focus: 'Weekend project help and emergency availability', emoji: '🛠️' },
+  sunday: { theme: 'Sunday Planning', focus: 'Week ahead preparation and maintenance planning', emoji: '📋' }
+}
+
+// Helper function to determine current season
 function getCurrentSeason(month: number): string {
-  if (month >= 2 && month <= 4) return 'Spring' // March-May: Mild, unpredictable
-  if (month >= 5 && month <= 9) return 'Summer' // June-October: Hot and humid
-  if (month >= 10 && month <= 11) return 'Fall' // November-December: Pleasant
-  return 'Winter' // January-February: Mild winter
+  if (month >= 3 && month <= 4) return 'Spring'
+  if (month >= 5 && month <= 8) return 'Summer'
+  if (month >= 9 && month <= 10) return 'Fall'
+  return 'Winter'
 }
 
-// Get platform information
+// Helper function to get platform information
 function getPlatformInfo(platform: string) {
-  const platformMap = {
-    facebook: { charLimit: 63206, recommendedLength: 400 },
-    instagram: { charLimit: 2200, recommendedLength: 200 },
-    twitter: { charLimit: 280, recommendedLength: 260 },
-    google: { charLimit: 1500, recommendedLength: 300 }
+  const platforms = {
+    'google': { name: 'Google Business Profile', charLimit: 1500, optimal: '200-400' },
+    'facebook': { name: 'Facebook', charLimit: 63206, optimal: '200-400' },
+    'instagram': { name: 'Instagram', charLimit: 2200, optimal: '100-200' },
+    'twitter': { name: 'X/Twitter', charLimit: 280, optimal: '240-270' }
   }
-  
-  return platformMap[platform as keyof typeof platformMap] || { charLimit: 1000, recommendedLength: 300 }
+  return platforms[platform as keyof typeof platforms] || platforms.facebook
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const openaiApiKey = process.env.OPENAI_API_KEY
-    if (!openaiApiKey) {
-      return NextResponse.json(
-        { success: false, error: 'OpenAI API key not configured' },
-        { status: 500 }
-      )
+// Helper function for intelligent content truncation
+function intelligentTruncate(content: string, maxLength: number): string {
+  if (content.length <= maxLength) return content
+  
+  // Try to truncate at sentence boundary
+  const sentences = content.split(/[.!?]+/)
+  let truncated = ''
+  
+  for (const sentence of sentences) {
+    const potential = truncated + (truncated ? '. ' : '') + sentence.trim()
+    if (potential.length <= maxLength - 3) { // -3 for "..."
+      truncated = potential
+    } else {
+      break
     }
-
-    const body = await request.json()
-    const { 
-      prompt,
-      businessId,
-      platform = 'facebook',
-      contentType = 'weekly-automation',
-      includeSpecials = true,
-      includeImages = true,
-      includeContentBlocks = true,
-      day = 'monday'
-    } = body
-
-    console.log(`🎯 Enhanced generation for ${businessId} - ${day} - ${platform}`)
-
-    if (!prompt || !businessId) {
-      return NextResponse.json(
-        { success: false, error: 'Prompt and businessId are required' },
-        { status: 400 }
-      )
-    }
-
-    // Load business settings
-    let businessSettings = null
-    let enhancedPrompt = prompt
-    let usedSpecials: string[] = []
-    let usedContentBlocks: string[] = []
-
-    try {
-      console.log(`📊 Loading business settings for ${businessId}`)
-      businessSettings = await settingsAggregator.getBusinessSettings(businessId)
-      
-      if (businessSettings?.profile) {
-        console.log(`✅ Business settings loaded for ${businessSettings.profile.businessId}`)
-        
-        // Build enhanced prompt with business context
-        enhancedPrompt = await buildEnhancedPrompt(
-          prompt,
-          businessSettings,
-          platform,
-          contentType,
-          includeSpecials,
-          includeContentBlocks,
-          day,
-          businessId
-        )
-        
-        // Track what we're using
-        if (includeSpecials) {
-          const currentMonth = new Date().getMonth()
-          usedSpecials = settingsAggregator.getRelevantSpecials(businessSettings, currentMonth).slice(0, 2)
-        }
-        
-        if (includeContentBlocks) {
-          const contentBlocks = settingsAggregator.getContentBlocksByType(businessSettings)
-          usedContentBlocks = Object.keys(contentBlocks)
-        }
-      }
-    } catch (error) {
-      console.error(`⚠️ Failed to load business settings:`, error)
-      // Continue without enhanced settings
-    }
-
-    console.log(`🤖 Generating content with enhanced prompt`)
-
-    // Generate content using OpenAI
-    let content = await generateContentWithOpenAI(enhancedPrompt, platform)
-    
-    if (!content) {
-      throw new Error('Failed to generate content')
-    }
-
-    console.log(`✅ Content generated: "${content.substring(0, 100)}..."`)
-
-    let businessName = businessId
-    
-    if (businessSettings) {
-      try {
-        const { prisma } = await import('@/lib/prisma')
-        const business = await prisma.business.findUnique({
-          where: { id: businessSettings.businessId }
-        })
-        // Use the FULL business name, not the shorthand displayName
-        if (business?.name) {
-          businessName = business.name  
-        }
-      } catch (error) {
-        console.warn('Could not fetch business name:', error)
-        // Fall back to businessId
-        businessName = businessSettings.businessId
-      }
-    }
-
-    content = cleanGeneratedContent(content, platform, businessName)
-    console.log(`🧹 Content cleaned for ${businessName}, final result: "${content.substring(0, 100)}..."`)
-
-    // Enhanced image selection using the new system
-    let imageResults = {
-      suggestedImageUrl: undefined as string | undefined,
-      imageDescription: undefined as string | undefined,
-      imageAlternatives: [] as any[],
-      imageAnalysis: {} as any
-    }
-
-    if (includeImages && businessSettings?.imageLibrary?.length) {
-      console.log(`🖼️ Starting enhanced image selection for ${day} content`)
-      
-      try {
-        const scoredImages = getEnhancedRelevantImages(
-          businessSettings,
-          content,
-          contentType,
-          day,
-          {
-            businessId,
-            platform,
-            brandVoice: businessSettings.profile?.brandVoice
-          }
-        )
-
-        if (scoredImages.length > 0) {
-          // Select the best image
-          const bestImage = scoredImages[0]
-          imageResults.suggestedImageUrl = bestImage.image.cloudUrl
-          imageResults.imageDescription = bestImage.description
-          imageResults.imageAnalysis = {
-            relevanceScore: bestImage.relevanceScore,
-            matchingFactors: bestImage.matchingFactors,
-            totalCandidates: businessSettings.imageLibrary.length,
-            relevantCandidates: scoredImages.length
-          }
-          
-          // Provide alternatives (top 4 other images)
-          imageResults.imageAlternatives = scoredImages.slice(1, 5).map(scored => ({
-            id: scored.image.id,
-            cloudUrl: scored.image.cloudUrl,
-            thumbnailUrl: scored.image.thumbnailUrl,
-            originalName: scored.image.originalName,
-            aiDescription: scored.image.aiDescription,
-            relevanceScore: scored.relevanceScore,
-            matchingFactors: scored.matchingFactors.slice(0, 3) // Top 3 factors
-          }))
-
-          console.log(`✅ Selected image: ${bestImage.image.originalName} (score: ${bestImage.relevanceScore})`)
-          console.log(`📊 Matching factors: ${bestImage.matchingFactors.slice(0, 3).join(', ')}`)
-          
-          // Update usage count
-          try {
-            await updateImageUsageCount(bestImage.image.id)
-          } catch (error) {
-            console.warn('Failed to update image usage count:', error)
-          }
-        } else {
-          console.log(`⚠️ No relevant images found for ${contentType} content`)
-          imageResults.imageDescription = `Professional ${contentType} content image needed`
-        }
-      } catch (error) {
-        console.error('Enhanced image selection failed:', error)
-        imageResults.imageDescription = 'Image selection temporarily unavailable'
-      }
-    }
-
-    // Calculate platform compliance
-    const platformInfo = getPlatformInfo(platform)
-    const characterCount = content.length
-    const withinLimits = characterCount <= (platformInfo?.charLimit || 10000)
-
-    console.log(`✅ Enhanced content generation completed for ${day}`)
-
-    return NextResponse.json({
-      success: true,
-      content: content,
-      metadata: {
-        businessId,
-        businessName: businessSettings?.profile?.businessId || businessId,
-        platform,
-        contentType,
-        day,
-        characterCount,
-        withinLimits,
-        platformLimit: platformInfo?.charLimit,
-        
-        // Enhanced image metadata
-        suggestedImage: imageResults.suggestedImageUrl,
-        imageDescription: imageResults.imageDescription,
-        hasActualImage: !!imageResults.suggestedImageUrl,
-        imageAlternatives: imageResults.imageAlternatives,
-        imageAnalysis: imageResults.imageAnalysis,
-        
-        // Content enhancement metadata
-        usedContentBlocks,
-        usedSpecials,
-        specialsCount: usedSpecials.length,
-        enhancedPromptUsed: enhancedPrompt !== prompt,
-        settingsUsed: !!businessSettings,
-        
-        generatedAt: new Date().toISOString()
-      }
-    })
-
-  } catch (error) {
-    console.error('⚠️ Enhanced content generation failed:', error)
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Content generation failed'
-      },
-      { status: 500 }
-    )
   }
+  
+  if (truncated) return truncated + '...'
+  
+  // Fallback to word boundary
+  const words = content.split(' ')
+  truncated = ''
+  
+  for (const word of words) {
+    const potential = truncated + (truncated ? ' ' : '') + word
+    if (potential.length <= maxLength - 3) { // -3 for "..."
+      truncated = potential
+    } else {
+      break
+    }
+  }
+  
+  return truncated + '...'
 }
 
-// Helper function to build enhanced prompt with business context
-async function buildEnhancedPrompt(
-  basePrompt: string,
-  businessSettings: any,
-  platform: string,
-  contentType: string,
-  includeSpecials: boolean,
-  includeContentBlocks: boolean,
-  day: string,
-  businessId: string
-): Promise<string> {
-  let enhancedPrompt = basePrompt
+// Rotation state tracking (in production, this would be stored in database)
+const rotationState: Record<string, { lastServiceType: string; dayCount: number }> = {}
+
+/**
+ * Select balanced specials with rotation to ensure equal service type distribution
+ */
+function selectBalancedSpecials(
+  monthlySpecials: { hvac?: string[], plumbing?: string[], electrical?: string[], all?: string[] },
+  businessId: string,
+  day: string
+): string[] {
+  if (!monthlySpecials) return []
+
+  // Initialize rotation state for this business
+  if (!rotationState[businessId]) {
+    rotationState[businessId] = { lastServiceType: '', dayCount: 0 }
+  }
+
+  const rotation = rotationState[businessId]
+  rotation.dayCount++
+
+  // Collect all available specials by service type
+  const availableSpecials = {
+    hvac: Array.isArray(monthlySpecials.hvac) ? monthlySpecials.hvac : [],
+    plumbing: Array.isArray(monthlySpecials.plumbing) ? monthlySpecials.plumbing : [],
+    electrical: Array.isArray(monthlySpecials.electrical) ? monthlySpecials.electrical : [],
+    all: Array.isArray(monthlySpecials.all) ? monthlySpecials.all : []
+  }
+
+  // Determine which service type to focus on this time
+  const serviceTypes = ['hvac', 'plumbing', 'electrical']
+  let selectedServiceType: string
+
+  // Ensure balanced rotation
+  if (rotation.dayCount === 1) {
+    selectedServiceType = serviceTypes[0]
+  } else {
+    const lastIndex = serviceTypes.indexOf(rotation.lastServiceType)
+    const nextIndex = (lastIndex + 1) % serviceTypes.length
+    selectedServiceType = serviceTypes[nextIndex]
+  }
+
+  rotation.lastServiceType = selectedServiceType
+
+  // Build the selected specials array
+  const selectedSpecials: string[] = []
+
+  // Add one primary service special
+  const primarySpecials = availableSpecials[selectedServiceType as keyof typeof availableSpecials]
+  if (primarySpecials.length > 0) {
+    const randomIndex = Math.floor(Math.random() * primarySpecials.length)
+    selectedSpecials.push(primarySpecials[randomIndex])
+  }
+
+  // Add "all" service specials if available (but limit to avoid over-promotion)
+  if (availableSpecials.all.length > 0 && selectedSpecials.length < 2) {
+    const randomIndex = Math.floor(Math.random() * availableSpecials.all.length)
+    selectedSpecials.push(availableSpecials.all[randomIndex])
+  }
+
+  // For Wednesday (specials day), try to add one more special from a different service
+  if (day === 'wednesday' && selectedSpecials.length === 1) {
+    const otherServices = serviceTypes.filter(service => service !== selectedServiceType)
+    for (const service of otherServices) {
+      const serviceSpecials = availableSpecials[service as keyof typeof availableSpecials]
+      if (serviceSpecials.length > 0) {
+        const randomIndex = Math.floor(Math.random() * serviceSpecials.length)
+        selectedSpecials.push(serviceSpecials[randomIndex])
+        break
+      }
+    }
+  }
+
+  console.log(`🔄 Rotation for ${businessId}: Day ${rotation.dayCount}, Service: ${selectedServiceType}, Selected: ${selectedSpecials.length} specials`)
   
-  // Get the FULL business name for the prompt (not the shorthand displayName)
-  let businessName = businessSettings?.businessId || businessId
-  
-  // Try to get the actual FULL business name from the database
+  return selectedSpecials
+}
+
+/**
+ * Get business information from database and settings
+ */
+async function getBusinessInfo(businessId: string) {
   try {
-    const { prisma } = await import('@/lib/prisma')
+    // Get business from database
     const business = await prisma.business.findUnique({
-      where: { id: businessSettings?.businessId || businessId }
+      where: { id: businessId },
+      include: {
+        businessProfile: true
+      }
     })
-    // Use the FULL business name from the 'name' field, not 'displayName'
-    if (business?.name) {
-      businessName = business.name  // e.g., "Lex Air Conditioning, Heating, Plumbing, Electrical"
+
+    if (!business) {
+      throw new Error(`Business not found: ${businessId}`)
+    }
+
+    return {
+      id: business.id,
+      name: business.name,
+      displayName: business.displayName,
+      phone: business.phone || getDefaultPhone(businessId),
+      website: business.website || getDefaultWebsite(businessId),
+      brandVoice: business.brandVoice || business.businessProfile?.brandVoice || getDefaultBrandVoice(businessId),
+      tagline: business.tagline || getDefaultTagline(businessId),
+      serviceTypes: business.businessProfile?.serviceTypes || getDefaultServiceTypes(business.type),
+      serviceAreas: business.businessProfile?.serviceAreas || [],
+      businessHours: business.businessProfile?.businessHours || null,
+      emergencyContact: business.businessProfile?.emergencyContact || business.phone,
+      messageStyle: business.businessProfile?.messageStyle || 'professional',
+      voiceTone: business.businessProfile?.voiceTone || 'professional'
     }
   } catch (error) {
-    console.warn('Could not fetch business name for prompt:', error)
+    console.error(`Error getting business info for ${businessId}:`, error)
+    return getDefaultBusinessInfo(businessId)
   }
-  
-  // Add business voice and context
-  if (businessSettings.profile) {
-    const profile = businessSettings.profile
-    enhancedPrompt += `\n\nBusiness Context: ${profile.brandVoice || 'Professional service provider'}`
-    
-    if (profile.serviceTypes?.length) {
-      enhancedPrompt += `\nServices: ${profile.serviceTypes.join(', ')}`
-    }
-    
-    if (profile.serviceAreas?.length) {
-      enhancedPrompt += `\nService Areas: ${profile.serviceAreas.join(', ')}`
-    }
-  }
-  
-  // Add monthly specials context
-  if (includeSpecials && businessSettings.monthlySpecials) {
-    const currentMonth = new Date().getMonth()
-    const relevantSpecials = settingsAggregator.getRelevantSpecials(businessSettings, currentMonth)
-    
-    if (relevantSpecials.length > 0) {
-      enhancedPrompt += `\n\nCurrent Promotions (use 1-2 relevant ones):\n${relevantSpecials.slice(0, 3).map(special => `• ${special}`).join('\n')}`
-    }
-  }
-  
-  // Add content blocks for contact info and CTAs
-  if (includeContentBlocks && businessSettings.contentBlocks) {
-    const contactBlocks = businessSettings.contentBlocks.filter((block: any) => 
-      block.category === 'contact' && block.isActive
-    ).slice(0, 2)
-    
-    const ctaBlocks = businessSettings.contentBlocks.filter((block: any) => 
-      block.category === 'cta' && block.isActive
-    ).slice(0, 1)
-    
-    if (contactBlocks.length > 0 || ctaBlocks.length > 0) {
-      enhancedPrompt += `\n\nAvailable Content Elements (use naturally):`
-      contactBlocks.forEach((block: any) => {
-        enhancedPrompt += `\n• Contact: ${block.content}`
-      })
-      ctaBlocks.forEach((block: any) => {
-        enhancedPrompt += `\n• CTA: ${block.content}`
-      })
-    }
-  }
-  
-  // Add platform and day-specific guidance
-  enhancedPrompt += `\n\nPlatform: ${platform} | Day Theme: ${day} | Content Type: ${contentType}`
-  enhancedPrompt += `\n\nIMPORTANT: Business name is "${businessName}". NEVER use placeholders like [Your Business Name] or [Business Name]. Always use the actual name: ${businessName}`
-  enhancedPrompt += `\n\nCreate engaging, platform-appropriate content that naturally incorporates relevant business information and maintains the brand voice. Focus on value and customer engagement.`
-  
-  return enhancedPrompt
 }
 
-// Generate content using OpenAI
-async function generateContentWithOpenAI(prompt: string, platform: string): Promise<string> {
-  const response = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-      'Content-Type': 'application/json'
+/**
+ * Get default business information as fallback
+ */
+function getDefaultBusinessInfo(businessId: string) {
+  const businessData = {
+    'lex-dallas': {
+      name: 'Lex Air Conditioning, Heating, Plumbing & Electrical',
+      displayName: 'Lex Dallas',
+      phone: '(972) 466-1917',
+      website: 'https://lexairconditioning.com',
+      brandVoice: 'Professional and polished, representing the gold standard of white glove service',
+      tagline: 'The Gold Standard of White Glove Service',
+      serviceTypes: ['hvac', 'plumbing', 'electrical'],
+      serviceAreas: ['Dallas', 'Plano', 'Frisco', 'McKinney'],
+      messageStyle: 'professional',
+      voiceTone: 'professional',
+      emergencyContact: '(972) 466-1917',
+      businessHours: null
     },
-    body: JSON.stringify({
-      model: 'gpt-4',
-      messages: [
-        {
-          role: 'system',
-          content: `You are an expert social media content creator specializing in home service businesses (HVAC, plumbing, electrical). 
-
-IMPORTANT: Create exactly ONE social media post. Do not create multiple posts, do not number posts, do not use "Post 1:", "Post 2:" or similar formatting.
-
-CRITICAL: NEVER use placeholders like [Your Business Name], [Business Name], [Company Name] or similar. Always use the actual business name provided in the prompt.
-
-PLATFORM REQUIREMENTS:
-- Twitter/X: Maximum 280 characters including spaces, hashtags, and punctuation
-- Instagram: Maximum 2,200 characters but aim for 100-200 for best engagement
-- Facebook: Can be longer but aim for 200-400 characters for best engagement  
-- Google Business Profile: Maximum 1,500 characters but aim for 200-300
-
-Create engaging, platform-appropriate content that drives customer engagement and builds trust. Focus on being helpful, professional, and authentic.
-
-Format: Write the content as a single cohesive social media post without any post numbering or multiple post formatting.`
-        },
-        {
-          role: 'user',
-          content: `${prompt}
-
-CRITICAL: Generate only ONE single social media post. Do not create multiple posts or use numbering like "Post 1:", "Post 2:", etc. Just write one complete social media post. Do not use any placeholders - use the actual business name provided.`
-        }
-      ],
-      max_tokens: 300,
-      temperature: 0.8,
-      top_p: 1
-    })
-  })
-
-  if (!response.ok) {
-    throw new Error(`OpenAI API error: ${response.status}`)
+    'lex-etx': {
+      name: 'Lex ETX Air Conditioning, Heating, Plumbing & Electrical',
+      displayName: 'Lex ETX',
+      phone: '(903) 596-7020',
+      website: 'https://lexetx.com',
+      brandVoice: 'Honest and straightforward, providing quality workmanship with reliable service',
+      tagline: 'Quality workmanship, honest service',
+      serviceTypes: ['hvac', 'plumbing', 'electrical'],
+      serviceAreas: ['Tyler', 'Longview', 'Marshall', 'Kilgore'],
+      messageStyle: 'professional',
+      voiceTone: 'professional',
+      emergencyContact: '(903) 596-7020',
+      businessHours: null
+    },
+    'lyons': {
+      name: 'Lyons Air Conditioning and Heating',
+      displayName: 'Lyons',
+      phone: '(972) 428-2995',
+      website: 'https://lyonsair.com',
+      brandVoice: 'Confident and approachable, treating customers like royalty with unmatched service',
+      tagline: 'The King of 5-Star Service',
+      serviceTypes: ['hvac'],
+      serviceAreas: ['Carrollton', 'Addison', 'Farmers Branch', 'Plano'],
+      messageStyle: 'enthusiastic',
+      voiceTone: 'enthusiastic',
+      emergencyContact: '(972) 428-2995',
+      businessHours: null
+    }
   }
-
-  const data = await response.json()
-  let content = data.choices[0]?.message?.content?.trim() || ''
   
-  // ADDITIONAL SAFETY: Clean any post numbering that might slip through
-  content = cleanMultiplePostFormat(content)
-  
-  return content
+  const data = businessData[businessId as keyof typeof businessData]
+  return data ? { id: businessId, ...data } : {
+    id: businessId,
+    name: businessId,
+    displayName: businessId,
+    phone: '(555) 123-4567',
+    website: 'https://example.com',
+    brandVoice: 'Professional service provider',
+    tagline: 'Quality Service',
+    serviceTypes: ['hvac', 'plumbing', 'electrical'],
+    serviceAreas: [],
+    messageStyle: 'professional',
+    voiceTone: 'professional',
+    emergencyContact: '(555) 123-4567',
+    businessHours: null
+  }
 }
 
-// Add this helper function to clean any multiple post formatting
-function cleanMultiplePostFormat(content: string): string {
-  // Remove "Post 1:", "Post 2:", etc. from the beginning
-  content = content.replace(/^Post \d+:\s*/i, '')
-  
-  // If content contains multiple "Post X:" sections, take only the first one
-  const postSections = content.split(/\n\s*Post \d+:/i)
-  if (postSections.length > 1) {
-    content = postSections[0].trim()
+function getDefaultPhone(businessId: string): string {
+  const phones = {
+    'lex-dallas': '(972) 466-1917',
+    'lex-etx': '(903) 596-7020',
+    'lyons': '(972) 428-2995'
   }
-  
-  // Remove any trailing incomplete sentences that might be cut off
-  const sentences = content.split(/[.!?]/)
-  if (sentences.length > 1 && sentences[sentences.length - 1].trim().length < 10) {
-    sentences.pop() // Remove the last incomplete sentence
-    content = sentences.join('.') + (sentences.length > 0 ? '.' : '')
-  }
-  
-  return content.trim()
+  return phones[businessId as keyof typeof phones] || '(555) 123-4567'
 }
 
-// NEW: Function to clean generated content and replace placeholders
-function cleanGeneratedContent(content: string, platform: string, businessName?: string): string {
+function getDefaultWebsite(businessId: string): string {
+  const websites = {
+    'lex-dallas': 'https://lexairconditioning.com',
+    'lex-etx': 'https://lexetx.com',
+    'lyons': 'https://lyonsair.com'
+  }
+  return websites[businessId as keyof typeof websites] || 'https://example.com'
+}
+
+function getDefaultBrandVoice(businessId: string): string {
+  const voices = {
+    'lex-dallas': 'Professional and polished, representing the gold standard of white glove service',
+    'lex-etx': 'Honest and straightforward, providing quality workmanship with reliable service',
+    'lyons': 'Confident and approachable, treating customers like royalty with unmatched service'
+  }
+  return voices[businessId as keyof typeof voices] || 'Professional service provider'
+}
+
+function getDefaultTagline(businessId: string): string {
+  const taglines = {
+    'lex-dallas': 'The Gold Standard of White Glove Service',
+    'lex-etx': 'Quality workmanship, honest service',
+    'lyons': 'The King of 5-Star Service'
+  }
+  return taglines[businessId as keyof typeof taglines] || 'Quality Service'
+}
+
+function getDefaultServiceTypes(businessType: string): string[] {
+  if (businessType === 'hvac') return ['hvac']
+  if (businessType === 'plumbing') return ['plumbing']  
+  if (businessType === 'electrical') return ['electrical']
+  return ['hvac', 'plumbing', 'electrical']
+}
+
+/**
+ * Clean unwanted formatting and placeholders from generated content
+ */
+function cleanGeneratedContent(content: string, businessInfo: any): string {
   let cleaned = content
 
-  // Remove common AI artifacts first
-  cleaned = cleaned.replace(/^(Here's|Here is).*?:\s*/i, '')
-  cleaned = cleaned.replace(/\*\*(.*?)\*\*/g, '$1') // Remove markdown bold
-  cleaned = cleaned.replace(/^#+\s*/gm, '') // Remove markdown headers
+  // Remove common unwanted headers and labels
+  cleaned = cleaned.replace(/^###?\s*(Facebook|Instagram|Twitter|Google|LinkedIn)\s*(Post|Update)?\s*(for|:).*$/gim, '')
+  cleaned = cleaned.replace(/^(Facebook|Instagram|Twitter|Google|LinkedIn)\s*(Post|Update)?\s*:?\s*/gim, '')
+  cleaned = cleaned.replace(/^Post\s*:?\s*/gim, '')
+  cleaned = cleaned.replace(/^\*\*Post\s*:?\*\*\s*/gim, '')
   
-  // CRITICAL FIX: Replace business name placeholders
-  if (businessName) {
-    console.log(`🔧 Replacing placeholders with business name: ${businessName}`)
-    
-    // Common placeholder patterns to replace
-    const placeholderPatterns = [
-      /\[Your Business Name\]/gi,
-      /\[Business Name\]/gi,
-      /\[Your Company Name\]/gi,
-      /\[Company Name\]/gi,
-      /\[YOUR BUSINESS NAME\]/gi,
-      /\[BUSINESS NAME\]/gi,
-      /#YourBusinessName/gi,
-      /#BusinessName/gi,
-      /\{Business Name\}/gi,
-      /\{YOUR_BUSINESS_NAME\}/gi,
-      /\{BUSINESS_NAME\}/gi,
-      /\[YourBusinessName\]/gi,
-      /YourBusinessName/gi, // Sometimes AI drops the brackets
-      /\[your business name\]/gi,
-      /\[your company\]/gi,
-      /Your Business Name/gi, // Sometimes without brackets
-      /Your Company Name/gi,
-      /\[Insert Business Name\]/gi,
-      /\[INSERT BUSINESS NAME\]/gi,
-      /\[Company\]/gi,
-      /\[Business\]/gi
-    ]
-    
-    // Replace all placeholder patterns with actual business name
-    placeholderPatterns.forEach(pattern => {
-      const beforeReplace = cleaned
-      cleaned = cleaned.replace(pattern, businessName)
-      if (beforeReplace !== cleaned) {
-        console.log(`✅ Replaced placeholder pattern: ${pattern.source}`)
-      }
-    })
-    
-    // Also handle hashtag placeholders specifically
-    cleaned = cleaned.replace(/#\[.*?business.*?name.*?\]/gi, `#${businessName.replace(/\s+/g, '')}`)
-    cleaned = cleaned.replace(/#\{.*?business.*?name.*?\}/gi, `#${businessName.replace(/\s+/g, '')}`)
-  }
+  // Remove unwanted suggestions and instructions
+  cleaned = cleaned.replace(/Feel free to adjust.*$/gim, '')
+  cleaned = cleaned.replace(/You can customize.*$/gim, '')
+  cleaned = cleaned.replace(/Don't forget to.*$/gim, '')
+  cleaned = cleaned.replace(/\*\*Note:.*$/gim, '')
+  cleaned = cleaned.replace(/Note:.*$/gim, '')
   
-  // Clean up any remaining bracket artifacts
-  cleaned = cleaned.replace(/\[\s*\]/g, '') // Empty brackets
-  cleaned = cleaned.replace(/\{\s*\}/g, '') // Empty braces
+  // Remove lines starting with "---"
+  cleaned = cleaned.replace(/^-{3,}.*$/gim, '')
   
-  // Remove platform-specific prefixes that AI sometimes adds
-  const platformPrefixes = [
-    /^(Facebook|Instagram|Twitter|Google Business Profile?):\s*/i,
-    /^Caption:\s*/i,
-    /^Tweet:\s*/i,
-    /^Post:\s*/i,
-    /^Social Media Post:\s*/i
-  ]
+  // Clean up markdown formatting
+  cleaned = cleaned.replace(/\*\*([^*]+)\*\*/g, '$1') // Remove **bold**
+  cleaned = cleaned.replace(/\*([^*]+)\*/g, '$1')     // Remove *italic*
+  cleaned = cleaned.replace(/_{2}([^_]+)_{2}/g, '$1') // Remove __bold__
+  cleaned = cleaned.replace(/_([^_]+)_/g, '$1')       // Remove _italic_
   
-  platformPrefixes.forEach(pattern => {
-    cleaned = cleaned.replace(pattern, '')
-  })
+  // Replace common placeholders with actual business info
+  cleaned = cleaned.replace(/\[Your Number\]/g, businessInfo.phone)
+  cleaned = cleaned.replace(/\[Company Name\]/g, businessInfo.displayName)
+  cleaned = cleaned.replace(/\[Phone Number\]/g, businessInfo.phone)
+  cleaned = cleaned.replace(/\[Business Name\]/g, businessInfo.displayName)
+  cleaned = cleaned.replace(/\[Website\]/g, businessInfo.website)
+  cleaned = cleaned.replace(/\[Phone\]/g, businessInfo.phone)
   
-  // Final cleanup
-  cleaned = cleaned.trim()
-  cleaned = cleaned.replace(/\s+/g, ' ') // Remove duplicate spaces
+  // Clean up extra whitespace and empty lines
+  cleaned = cleaned.replace(/\n{3,}/g, '\n\n')  // Max 2 consecutive newlines
+  cleaned = cleaned.replace(/^\s+|\s+$/g, '')    // Trim whitespace
+  cleaned = cleaned.replace(/\s{2,}/g, ' ')      // Replace multiple spaces with single space
   
   return cleaned
 }
 
-// Update image usage count
-async function updateImageUsageCount(imageId: string): Promise<void> {
+/**
+ * Extract content blocks into organized format
+ */
+function organizeContentBlocks(contentBlocks: any[]) {
+  const organized: Record<string, string[]> = {}
+  
+  contentBlocks.forEach(block => {
+    if (!organized[block.type]) {
+      organized[block.type] = []
+    }
+    organized[block.type].push(block.content)
+  })
+  
+  return organized
+}
+
+/**
+ * Generate content using OpenAI with proper business integration
+ */
+async function generateContentWithOpenAI(prompt: string, businessId: string, platform: string, day: string): Promise<string> {
+  const openaiApiKey = process.env.OPENAI_API_KEY
+  if (!openaiApiKey) {
+    throw new Error('OpenAI API key not configured')
+  }
+
+  const platformInfo = getPlatformInfo(platform)
+  const isTwitter = platform === 'twitter'
+  const maxAttempts = isTwitter ? 5 : 1
+  let attemptCount = 0
+  let enhancedPrompt = prompt
+  let generatedContent = ''
+
+  // Get business information
+  const businessInfo = await getBusinessInfo(businessId)
+
+  while (attemptCount < maxAttempts) {
+    attemptCount++
+    
+    try {
+      console.log(`🎯 Generation attempt ${attemptCount}${isTwitter ? ` for Twitter (${platformInfo.charLimit} char limit)` : ''}`)
+
+      // Enhanced system prompt to prevent formatting issues
+      const systemPrompt = `You are a professional social media content creator for HVAC, plumbing, and electrical service companies.
+
+CRITICAL INSTRUCTIONS:
+1. Return ONLY the final post content - nothing else
+2. DO NOT include headers like "Facebook Post:" or "### Post for Business"
+3. DO NOT include metadata, instructions, or suggestions 
+4. DO NOT use markdown formatting like **bold** - use plain text with emojis for emphasis
+5. DO NOT include placeholder text like [Your Number] or [Company Name]
+6. DO NOT add suggestions like "Feel free to adjust..." at the end
+7. Use actual business information when provided in the prompt
+8. Create ready-to-publish content only
+9. Include real contact information naturally in the content
+10. Follow the brand voice and messaging style specified
+
+The content should be engaging, professional, and include real business details like phone numbers and specific offers when provided.`
+
+      // Enhanced user prompt with comprehensive business details
+      const businessPrompt = `${enhancedPrompt}
+
+🏢 BUSINESS INFORMATION FOR ${businessInfo.displayName.toUpperCase()}:
+- Full Business Name: ${businessInfo.name}
+- Display Name: ${businessInfo.displayName}
+- Phone Number: ${businessInfo.phone}
+- Website: ${businessInfo.website}
+- Brand Voice: ${businessInfo.brandVoice}
+- Tagline: ${businessInfo.tagline}
+- Message Style: ${businessInfo.messageStyle}
+- Voice Tone: ${businessInfo.voiceTone}
+- Service Types: ${businessInfo.serviceTypes.join(', ')}
+- Service Areas: ${businessInfo.serviceAreas.join(', ')}
+- Emergency Contact: ${businessInfo.emergencyContact}
+
+MANDATORY REQUIREMENTS:
+- Use the EXACT phone number: ${businessInfo.phone}
+- Use the EXACT website: ${businessInfo.website}
+- Use the EXACT business name: ${businessInfo.displayName}
+- Follow the brand voice: ${businessInfo.brandVoice}
+- Match the message style: ${businessInfo.messageStyle}
+- Include relevant service types: ${businessInfo.serviceTypes.join(', ')}
+- NEVER use placeholders - use actual information only
+
+Return ONLY the post content, ready to publish immediately.`
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openaiApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
+              role: 'user',
+              content: businessPrompt
+            }
+          ],
+          max_tokens: 500,
+          temperature: 0.7,
+          top_p: 1,
+          frequency_penalty: 0.1,
+          presence_penalty: 0.1
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API error: ${response.status} ${response.statusText}`)
+      }
+
+      const result = await response.json()
+      
+      if (!result.choices || !result.choices[0]?.message?.content) {
+        throw new Error('Invalid response from OpenAI API')
+      }
+
+      generatedContent = result.choices[0].message.content.trim()
+
+      // Enhanced content cleaning with business info
+      generatedContent = cleanGeneratedContent(generatedContent, businessInfo)
+      
+      console.log(`📝 Cleaned content (${generatedContent.length} chars):`, generatedContent.substring(0, 100) + '...')
+
+      // For Twitter, check length and retry if needed
+      if (isTwitter) {
+        const contentLength = generatedContent.length
+        
+        if (contentLength > 280) {
+          console.log(`⚠️ Twitter content too long: ${contentLength} chars. Attempt ${attemptCount}/${maxAttempts}`)
+          
+          if (attemptCount < maxAttempts) {
+            // Make prompt more restrictive for retry
+            if (attemptCount === 2) {
+              enhancedPrompt = `${prompt}\n\nCRITICAL: MAXIMUM 270 characters total including spaces and hashtags. Current attempt: ${contentLength} chars - TOO LONG! Make much shorter.`
+            } else if (attemptCount === 3) {
+              enhancedPrompt = `Create short Twitter post for ${businessInfo.displayName} about ${day}. MAX 250 characters. Include ${businessInfo.phone} and 1-2 hashtags only. Very brief.`
+            } else if (attemptCount === 4) {
+              enhancedPrompt = `${businessInfo.displayName} ${day} tweet. Under 240 chars. ${businessInfo.phone} + hashtags. Super short.`
+            }
+            continue
+          } else {
+            // Last resort: intelligent truncation
+            console.log(`⚠️ Max attempts reached. Truncating content...`)
+            generatedContent = intelligentTruncate(generatedContent, 280)
+          }
+        }
+
+        console.log(`✅ Twitter content generated successfully in ${attemptCount} attempts (${generatedContent.length} chars)`)
+        break
+
+      } else {
+        // Non-Twitter platforms, accept on first attempt
+        break
+      }
+
+    } catch (error) {
+      console.error(`❌ Generation attempt ${attemptCount} failed:`, error)
+      
+      if (attemptCount >= maxAttempts) {
+        throw new Error(`Content generation failed after ${maxAttempts} attempts: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      }
+      
+      // For retries, simplify the prompt
+      enhancedPrompt = `Create a short ${platform} post for ${businessInfo.displayName} about ${day}. Include ${businessInfo.phone}. Keep under ${platformInfo.charLimit} characters.`
+    }
+  }
+
+  if (!generatedContent) {
+    throw new Error('Failed to generate content')
+  }
+
+  return generatedContent
+}
+
+/**
+ * Search for relevant images with better error handling
+ */
+async function searchRelevantImages(businessId: string, content: string, day: string, platform: string) {
   try {
-    // This would be implemented based on your database structure
-    // await prisma.imageLibrary.update({
-    //   where: { id: imageId },
-    //   data: { usageCount: { increment: 1 }, lastUsed: new Date() }
-    // })
-    console.log(`Updated usage count for image ${imageId}`)
+    console.log(`🔍 Searching images for: businessId=${businessId}, day=${day}, platform=${platform}`)
+    
+    // Get business settings which includes image library
+    const businessSettings = await settingsAggregator.getBusinessSettings(businessId)
+    
+    if (!businessSettings.imageLibrary || businessSettings.imageLibrary.length === 0) {
+      console.log('📷 No image library found for business')
+      return null
+    }
+    
+    console.log(`📚 Image library size: ${businessSettings.imageLibrary.length} images`)
+    
+    // Import and use the enhanced image matcher properly
+    const { getEnhancedRelevantImages: imageMatcherFunction } = await import('@/lib/enhanced-image-matcher')
+    
+    const imageResults = imageMatcherFunction(
+      businessSettings,
+      content,
+      'weekly-automation', // contentType
+      day,
+      { businessId, platform } // businessContext
+    )
+    
+    console.log('🎯 Image matching results:', {
+      resultType: typeof imageResults,
+      isArray: Array.isArray(imageResults),
+      length: Array.isArray(imageResults) ? imageResults.length : 0,
+      hasResults: !!imageResults
+    })
+    
+    return imageResults
+    
   } catch (error) {
-    console.error('Failed to update image usage:', error)
+    console.error('❌ Enhanced image matching failed:', error)
+    return null
   }
 }
 
-export async function GET() {
-  try {
-    const currentSeason = getCurrentSeason(new Date().getMonth())
-    const availableTemplates = [
-      'seasonal_tip',
-      'maintenance_reminder', 
-      'weather_alert',
-      'promotion',
-      'customer_story',
-      'company_update',
-      'emergency_service'
-    ]
+/**
+ * Helper functions to extract image data consistently
+ */
+function getImageUrl(imageResults: any): string | null {
+  if (!imageResults) return null
+  
+  // Handle array of results
+  if (Array.isArray(imageResults) && imageResults.length > 0) {
+    const firstResult = imageResults[0]
+    return firstResult.image?.cloudUrl || firstResult.selectedImage?.url || null
+  }
+  
+  // Handle single result object
+  if (imageResults.selectedImage?.url) {
+    return imageResults.selectedImage.url
+  }
+  
+  // Handle direct image object
+  if (imageResults.image?.cloudUrl) {
+    return imageResults.image.cloudUrl
+  }
+  
+  return null
+}
 
-    return NextResponse.json({
-      success: true,
-      currentSeason,
-      availableTemplates,
-      isConfigured: !!process.env.OPENAI_API_KEY // Fixed: aiService is not imported in this file
+function getImageDescription(imageResults: any): string | null {
+  if (!imageResults) return null
+  
+  // Handle array of results
+  if (Array.isArray(imageResults) && imageResults.length > 0) {
+    const firstResult = imageResults[0]
+    return firstResult.description || firstResult.image?.aiDescription || firstResult.selectedImage?.description || null
+  }
+  
+  // Handle single result object
+  if (imageResults.selectedImage?.description) {
+    return imageResults.selectedImage.description
+  }
+  
+  // Handle direct image object
+  if (imageResults.image?.aiDescription) {
+    return imageResults.image.aiDescription
+  }
+  
+  return null
+}
+
+function getImageAlternatives(imageResults: any): any[] {
+  if (!imageResults) return []
+  
+  // Handle array of results - return all except first as alternatives
+  if (Array.isArray(imageResults) && imageResults.length > 1) {
+    return imageResults.slice(1).map(result => ({
+      url: result.image?.cloudUrl,
+      description: result.description || result.image?.aiDescription,
+      score: result.relevanceScore
+    }))
+  }
+  
+  // Handle single result object with alternatives
+  if (imageResults.alternatives && Array.isArray(imageResults.alternatives)) {
+    return imageResults.alternatives
+  }
+  
+  return []
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const {
+      prompt,
+      businessId,
+      platform,
+      contentType,
+      includeSpecials = false,
+      includeImages = false,
+      includeContentBlocks = false,
+      day,
+      month = new Date().getMonth() // Default to current month
+    } = body
+
+    console.log('🔧 Enhanced content generation request:', {
+      businessId,
+      platform,
+      contentType,
+      includeSpecials,
+      includeImages,
+      day,
+      month
     })
 
+    // Load business settings with better error handling
+    let businessSettings
+    try {
+      businessSettings = await settingsAggregator.getBusinessSettings(businessId)
+      console.log('📊 Loaded business settings:', {
+        hasProfile: !!businessSettings.profile,
+        monthlySpecialsCount: businessSettings.monthlySpecials?.length || 0,
+        contentBlocksCount: businessSettings.contentBlocks?.length || 0,
+        imageLibraryCount: businessSettings.imageLibrary?.length || 0
+      })
+    } catch (error) {
+      console.error('❌ Failed to load business settings:', error)
+      // Continue with minimal settings rather than failing
+      businessSettings = {
+        businessId,
+        profile: null,
+        contentBlocks: [],
+        monthlySpecials: [],
+        templatePreferences: null,
+        imageLibrary: []
+      }
+    }
+
+    // Get business information
+    const businessInfo = await getBusinessInfo(businessId)
+    console.log('🏢 Business info loaded:', {
+      name: businessInfo.displayName,
+      phone: businessInfo.phone,
+      website: businessInfo.website,
+      brandVoice: businessInfo.brandVoice?.substring(0, 50) + '...'
+    })
+
+    // Generate platform-specific content
+    const platformInfo = getPlatformInfo(platform)
+    const dayThemes = DAILY_THEMES
+    const currentSeason = getCurrentSeason(month)
+    
+    // Enhanced prompt building with complete business integration
+    let enhancedPrompt = `Create professional social media content for ${businessInfo.displayName}.`
+    
+    enhancedPrompt += `\n\n🎯 BUSINESS CONTEXT:`
+    enhancedPrompt += `\nBusiness: ${businessInfo.name} (${businessInfo.displayName})`
+    enhancedPrompt += `\nPhone: ${businessInfo.phone}`
+    enhancedPrompt += `\nWebsite: ${businessInfo.website}`
+    enhancedPrompt += `\nTagline: ${businessInfo.tagline}`
+    enhancedPrompt += `\nServices: ${businessInfo.serviceTypes.join(', ')}`
+    if (businessInfo.serviceAreas.length > 0) {
+      enhancedPrompt += `\nService Areas: ${businessInfo.serviceAreas.join(', ')}`
+    }
+    
+    enhancedPrompt += `\n\n🎨 BRAND GUIDELINES:`
+    enhancedPrompt += `\nBrand Voice: ${businessInfo.brandVoice}`
+    enhancedPrompt += `\nMessage Style: ${businessInfo.messageStyle}`
+    enhancedPrompt += `\nVoice Tone: ${businessInfo.voiceTone}`
+    
+    enhancedPrompt += `\n\n📱 CONTENT REQUIREMENTS:`
+    enhancedPrompt += `\nPlatform: ${platform}`
+    enhancedPrompt += `\nContent theme: ${dayThemes[day as keyof typeof dayThemes]?.theme || day}`
+    enhancedPrompt += `\nSeason: ${currentSeason} content considerations`
+
+    // Simplified and more reliable specials loading
+    let selectedSpecials: string[] = []
+    let specialsIncluded = false
+    
+    if (includeSpecials) {
+      console.log('🎯 Processing monthly specials...')
+      
+      // Try to get current month specials directly from database
+      try {
+        const currentYear = new Date().getFullYear()
+        const monthlySpecial = await prisma.monthlySpecial.findFirst({
+          where: {
+            businessId,
+            year: currentYear,
+            month: month
+          }
+        })
+        
+        if (monthlySpecial) {
+          console.log('✅ Found monthly special in database:', monthlySpecial)
+          
+          const specialsData = {
+            hvac: monthlySpecial.hvac || [],
+            plumbing: monthlySpecial.plumbing || [],
+            electrical: monthlySpecial.electrical || [],
+            all: monthlySpecial.all || []
+          }
+          
+          selectedSpecials = selectBalancedSpecials(specialsData, businessId, day)
+          specialsIncluded = selectedSpecials.length > 0
+          
+          console.log('🎲 Selected specials after rotation:', selectedSpecials)
+        } else {
+          console.log(`⚠️ No monthly special found for ${businessId}, year: ${currentYear}, month: ${month}`)
+          
+          // Fallback - check if any specials exist for this business
+          const anySpecials = await prisma.monthlySpecial.findFirst({
+            where: { businessId }
+          })
+          
+          if (anySpecials) {
+            console.log('📋 Found specials for other months:', anySpecials)
+          } else {
+            console.log('❌ No monthly specials configured for this business at all')
+          }
+        }
+      } catch (error) {
+        console.error('❌ Error loading monthly specials:', error)
+      }
+    }
+
+    // Add specials to prompt if available
+    if (selectedSpecials.length > 0) {
+      enhancedPrompt += `\n\n🎯 PROMOTIONAL SPECIALS TO INCLUDE:`
+      selectedSpecials.forEach((special, index) => {
+        enhancedPrompt += `\n${index + 1}. ${special}`
+      })
+      enhancedPrompt += `\n\nIMPORTANT: You MUST include at least one of these specials in your content using the exact wording provided.`
+    } else if (includeSpecials) {
+      console.log('⚠️ Specials requested but none available - continuing without specials')
+    }
+
+    // Add content blocks if available
+    if (includeContentBlocks && businessSettings.contentBlocks.length > 0) {
+      const contentBlocks = organizeContentBlocks(businessSettings.contentBlocks)
+      enhancedPrompt += `\n\n📞 AVAILABLE CONTENT BLOCKS:`
+      
+      Object.keys(contentBlocks).forEach(type => {
+        enhancedPrompt += `\n${type.toUpperCase()}: ${contentBlocks[type].join(', ')}`
+      })
+    }
+
+    // Final content guidelines with business-specific requirements
+    enhancedPrompt += `\n\n✅ FINAL REQUIREMENTS:
+- Professional, ${businessInfo.voiceTone} tone matching ${businessInfo.messageStyle} style
+- Include compelling call-to-action
+- Use EXACT phone number: ${businessInfo.phone}
+- Use EXACT website: ${businessInfo.website}
+- Use EXACT business name: ${businessInfo.displayName}
+- Focus on customer benefits and value
+- Use relevant hashtags (${platform === 'twitter' ? '2-3 max' : '3-5'})
+- Incorporate seasonal relevance when appropriate
+- Highlight expertise and reliability
+- Emergency service availability when relevant
+${selectedSpecials.length > 0 ? '- MUST mention the promotional specials listed above' : ''}
+
+PLATFORM REQUIREMENTS:
+- ${platform === 'twitter' ? 'Twitter/X: Maximum 280 characters including spaces, hashtags, and punctuation' : ''}
+- ${platform === 'instagram' ? 'Instagram: Maximum 2,200 characters but aim for 100-200 for best engagement' : ''}
+- ${platform === 'facebook' ? 'Facebook: Can be longer but aim for 200-400 characters for best engagement' : ''}
+- ${platform === 'google' ? 'Google Business Profile: Maximum 1,500 characters but aim for 200-300' : ''}
+
+Create engaging, platform-appropriate content that drives customer engagement and builds trust.`
+
+    console.log('📝 Final prompt length:', enhancedPrompt.length)
+    console.log('🎯 Specials included in prompt:', specialsIncluded)
+
+    // Generate content with OpenAI
+    let generatedContent = await generateContentWithOpenAI(enhancedPrompt, businessId, platform, day)
+
+    // Enhanced image selection with better fallback
+    let imageResults: any = null
+    if (includeImages) {
+      try {
+        console.log('🖼️ Attempting to find relevant images...')
+        
+        imageResults = await searchRelevantImages(businessId, generatedContent, day, platform)
+        
+        console.log('🖼️ Image search results:', {
+          hasResults: !!imageResults,
+          isArray: Array.isArray(imageResults),
+          length: Array.isArray(imageResults) ? imageResults.length : 0,
+          firstResult: Array.isArray(imageResults) && imageResults.length > 0 ? {
+            fileName: imageResults[0].image?.originalName,
+            score: imageResults[0].relevanceScore,
+            url: imageResults[0].image?.cloudUrl
+          } : null
+        })
+        
+        if (!imageResults || (Array.isArray(imageResults) && imageResults.length === 0)) {
+          console.log('⚠️ No relevant images found, checking image library status...')
+          
+          // Check if business has any images at all
+          const imageCount = await prisma.imageLibrary.count({
+            where: { businessId, isActive: true }
+          })
+          
+          if (imageCount === 0) {
+            console.log('❌ No images in library for this business')
+          } else {
+            console.log(`📷 Found ${imageCount} images in library, but none matched search criteria`)
+            
+            // Fallback: Get any image from the library as backup
+            const fallbackImage = await prisma.imageLibrary.findFirst({
+              where: { businessId, isActive: true },
+              orderBy: { uploadedAt: 'desc' }
+            })
+            
+            if (fallbackImage) {
+              console.log('🔄 Using fallback image:', fallbackImage.originalName)
+              imageResults = [{
+                image: fallbackImage,
+                relevanceScore: 10,
+                matchingFactors: ['fallback_image'],
+                description: fallbackImage.aiDescription || 'Company image'
+              }]
+            }
+          }
+        }
+      } catch (error) {
+        console.error('❌ Image matching failed:', error)
+      }
+    }
+
+    // Prepare response
+    const characterCount = generatedContent.length
+    const withinLimits = characterCount <= platformInfo.charLimit
+
+    const metadata = {
+      platform,
+      characterCount,
+      withinLimits,
+      platformLimit: platformInfo.charLimit,
+      day,
+      contentType,
+      businessId,
+      month,
+      generatedAt: new Date().toISOString(),
+      specialsRequested: includeSpecials,
+      specialsFound: specialsIncluded,
+      specialsCount: selectedSpecials.length,
+      imagesRequested: includeImages,
+      imageFound: !!(getImageUrl(imageResults)),
+      businessInfo: {
+        name: businessInfo.displayName,
+        phone: businessInfo.phone,
+        website: businessInfo.website
+      },
+      imageSearchResults: Array.isArray(imageResults) ? imageResults.length : (imageResults ? 1 : 0),
+      imageSelectionMethod: imageResults ? 'ai_matched' : 'none'
+    }
+
+    const response = {
+      success: true,
+      data: {
+        content: generatedContent,
+        characterCount,
+        withinLimits,
+        suggestedImage: getImageUrl(imageResults),
+        suggestedImageUrl: getImageUrl(imageResults),
+        imageDescription: getImageDescription(imageResults),
+        imageAlternatives: getImageAlternatives(imageResults),
+        templateUsed: contentType,
+        monthlySpecials: selectedSpecials,
+        specialsIncluded,
+        metadata
+      }
+    }
+
+    // Enhanced debugging output
+    console.log('✅ Generation completed:', {
+      contentLength: generatedContent.length,
+      specialsIncluded: specialsIncluded,
+      specialsCount: selectedSpecials.length,
+      imageFound: !!(getImageUrl(imageResults)),
+      withinLimits: withinLimits,
+      businessName: businessInfo.displayName,
+      phoneIncluded: generatedContent.includes(businessInfo.phone),
+      websiteIncluded: generatedContent.includes(businessInfo.website.replace('https://', '').replace('www.', ''))
+    })
+
+    return NextResponse.json(response)
+
   } catch (error) {
-    console.error('Error getting AI info:', error)
+    console.error('❌ Enhanced content generation error:', error)
     return NextResponse.json(
-      { success: false, error: 'Failed to get AI information' },
+      { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Content generation failed',
+        details: error instanceof Error ? error.stack : undefined
+      },
       { status: 500 }
     )
   }

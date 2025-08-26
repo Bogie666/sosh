@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Storage } from '@google-cloud/storage'
 import { v4 as uuidv4 } from 'uuid'
+import { getGoogleCredentials } from '@/lib/google-credentials'
 
 const storage = new Storage({
   projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-  credentials: process.env.GOOGLE_CLOUD_CREDENTIALS ? JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS) : undefined
+  credentials: getGoogleCredentials() || undefined
 })
 
 const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET || 'sosh-images'

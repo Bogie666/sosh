@@ -4,11 +4,12 @@ import { prisma } from '@/lib/prisma'
 import { Storage } from '@google-cloud/storage'
 import { v4 as uuidv4 } from 'uuid'
 import sharp from 'sharp'
+import { getGoogleCredentials } from '@/lib/google-credentials'
 
 // Initialize Google Cloud Storage
 const storage = new Storage({
   projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-  credentials: process.env.GOOGLE_CLOUD_CREDENTIALS ? JSON.parse(process.env.GOOGLE_CLOUD_CREDENTIALS) : undefined
+  credentials: getGoogleCredentials() || undefined
 })
 
 const bucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET || 'sosh-images'

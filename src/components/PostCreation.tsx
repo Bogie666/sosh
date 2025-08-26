@@ -156,107 +156,106 @@ export default function EnhancedPostCreation() {
 
   // Suggest relevant images based on content
   const suggestRelevantImages = async () => {
-    if (!postData.content.trim() || libraryImages.length === 0) {
-      setSuggestedImages([])
-      return
-    }
-
-    try {
-      // Use a simple keyword-based suggestion for now
-      // This could be enhanced with the enhanced-image-matcher later
-      const contentLower = postData.content.toLowerCase()
-      const keywords: string[] = []
-      
-      // Extract keywords from content
-      if (contentLower.includes('hvac') || contentLower.includes('heating') || contentLower.includes('cooling')) {
-        keywords.push('hvac', 'hvac_work')
-      }
-      if (contentLower.includes('plumbing') || contentLower.includes('water') || contentLower.includes('pipe')) {
-        keywords.push('plumbing', 'plumbing_work')
-      }
-      if (contentLower.includes('electrical') || contentLower.includes('electric')) {
-        keywords.push('electrical', 'electrical_work')
-      }
-      if (contentLower.includes('team') || contentLower.includes('staff')) {
-        keywords.push('team', 'professional')
-      }
-      if (contentLower.includes('emergency') || contentLower.includes('urgent')) {
-        keywords.push('emergency', 'truck', 'service_vehicle')
-      }
-
-      // Filter images based on keywords
-      const relevant = libraryImages.filter(image => {
-        const allTags = [...(image.aiTags || []), ...(image.manualTags || [])].map(tag => tag.toLowerCase())
-        const description = (image.aiDescription || '').toLowerCase()
-        
-        return keywords.some(keyword => 
-          allTags.some(tag => tag.includes(keyword)) ||
-          description.includes(keyword)
-        )
-      }).slice(0, 6) // Top 6 suggestions
-      
-      setSuggestedImages(relevant)
-    } catch (error) {
-      console.error('Failed to suggest images:', error)
-    }
+  // 🔧 FIXED: Add null check for postData.content
+  if (!postData.content?.trim() || libraryImages.length === 0) { // Changed from postData.content.trim() to postData.content?.trim()
+    setSuggestedImages([])
+    return
   }
+
+  try {
+    // Use a simple keyword-based suggestion for now
+    // This could be enhanced with the enhanced-image-matcher later
+    const contentLower = postData.content.toLowerCase()
+    const keywords: string[] = []
+    
+    // Extract keywords from content
+    if (contentLower.includes('hvac') || contentLower.includes('heating') || contentLower.includes('cooling')) {
+      keywords.push('hvac', 'heating', 'cooling', 'air_conditioning')
+    }
+    if (contentLower.includes('plumbing') || contentLower.includes('water') || contentLower.includes('pipe')) {
+      keywords.push('plumbing', 'water', 'pipes')
+    }
+    if (contentLower.includes('electrical') || contentLower.includes('electric') || contentLower.includes('wiring')) {
+      keywords.push('electrical', 'electric', 'wiring')
+    }
+    
+    // Simple matching - find images with matching tags or descriptions
+    const relevant = libraryImages.filter(image => {
+      const imageTags = [...image.aiTags, ...image.manualTags].map(tag => tag.toLowerCase())
+      const description = image.aiDescription?.toLowerCase() || ''
+      
+      return keywords.some(keyword => 
+        imageTags.some(tag => tag.includes(keyword.toLowerCase())) ||
+        description.includes(keyword.toLowerCase())
+      )
+    }).slice(0, 6) // Limit to 6 suggestions
+    
+    setSuggestedImages(relevant)
+  } catch (error) {
+    console.error('Failed to suggest images:', error)
+    setSuggestedImages([])
+  }
+}
 
   // Enhanced AI content generation with business context
-  const generateAIContent = async () => {
-    if (!aiPrompt.trim()) {
-      alert('Please enter a prompt for AI content generation')
-      return
-    }
-
-    if (postData.businesses.length === 0) {
-      alert('Please select at least one business for context')
-      return
-    }
-
-    if (postData.platforms.length === 0) {
-      alert('Please select at least one platform for optimization')
-      return
-    }
-
-    setIsGeneratingAI(true)
-    try {
-      const response = await fetch('/api/ai/generate-enhanced-content', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: `Create custom social media content: ${aiPrompt}`,
-          businessId: postData.businesses[0],
-          platform: postData.platforms[0],
-          contentType: 'custom-user-prompt',
-          includeSpecials: enhancedMode, // Only if enhanced mode is on
-          includeImages: false, // We'll handle images separately
-          includeContentBlocks: enhancedMode, // Only if enhanced mode is on
-          day: new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() // current day for context
-        })
-      })
-
-      const data = await response.json()
-      
-      if (data.success) {
-        updatePostData({ content: data.content })
-        setAiPrompt('')
-        
-        // Show success with platform info
-        const platform = platforms.find(p => p.id === postData.platforms[0])
-        const charCount = data.content.length
-        const withinLimits = charCount <= (platform?.charLimit || 1000)
-        
-        alert(`AI content generated successfully!\nCharacters: ${charCount}${platform ? `/${platform.charLimit}` : ''} ${withinLimits ? '✓' : '⚠️ Over limit'}`)
-      } else {
-        alert('Failed to generate AI content: ' + (data.error || 'Unknown error'))
-      }
-    } catch (error) {
-      console.error('AI generation failed:', error)
-      alert('Failed to generate AI content: ' + (error instanceof Error ? error.message : 'Unknown error'))
-    } finally {
-      setIsGeneratingAI(false)
-    }
+  const generateAI = async () => {
+  if (!aiPrompt.trim()) {
+    alert('Please enter a prompt for AI generation')
+    return
   }
+
+  if (postData.businesses.length === 0) {
+    alert('Please select at least one business for context')
+    return
+  }
+
+  if (postData.platforms.length === 0) {
+    alert('Please select at least one platform for optimization')
+    return
+  }
+
+  setIsGeneratingAI(true)
+  try {
+    const response = await fetch('/api/ai/generate-enhanced-content', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        prompt: `Create custom social media content: ${aiPrompt}`,
+        businessId: postData.businesses[0],
+        platform: postData.platforms[0],
+        contentType: 'custom-user-prompt',
+        includeSpecials: enhancedMode, // Only if enhanced mode is on
+        includeImages: false, // We'll handle images separately
+        includeContentBlocks: enhancedMode, // Only if enhanced mode is on
+        day: new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() // current day for context
+      })
+    })
+
+    const data = await response.json()
+    
+    if (data.success) {
+      // 🔧 FIXED: Updated to use the new API response structure
+      const generatedContent = data.data.content // Changed from data.content to data.data.content
+      
+      updatePostData({ content: generatedContent })
+      setAiPrompt('')
+      
+      // Show success with platform info
+      const platform = platforms.find(p => p.id === postData.platforms[0])
+      const charCount = generatedContent.length
+      const withinLimits = charCount <= (platform?.charLimit || 1000)
+      
+      alert(`AI content generated successfully!\nCharacters: ${charCount}${platform ? `/${platform.charLimit}` : ''} ${withinLimits ? '✅' : '⚠️ Over limit'}`)
+    } else {
+      alert('Failed to generate AI content: ' + (data.error || 'Unknown error'))
+    }
+  } catch (error) {
+    console.error('AI generation failed:', error)
+    alert('Failed to generate AI content: ' + (error instanceof Error ? error.message : 'Unknown error'))
+  } finally {
+    setIsGeneratingAI(false)
+  }
+}
 
   // Handle image library selection
   const toggleLibraryImage = (image: ImageLibraryItem) => {
@@ -359,33 +358,34 @@ export default function EnhancedPostCreation() {
 
   // Get character count with platform-specific warnings
   const getCharacterCounts = () => {
-    if (postData.platforms.length === 0) return null
+  if (postData.platforms.length === 0) return null
+  
+  return postData.platforms.map(platformId => {
+    const platform = platforms.find(p => p.id === platformId)
+    if (!platform) return null
     
-    return postData.platforms.map(platformId => {
-      const platform = platforms.find(p => p.id === platformId)
-      if (!platform) return null
-      
-      const count = postData.content.length
-      const isOverLimit = count > platform.charLimit
-      const isInSweetSpot = count >= parseInt(platform.sweet.split('-')[0]) && 
-                           count <= parseInt(platform.sweet.split('-')[1])
-      
-      return (
-        <div key={platformId} className={`text-xs p-2 rounded ${
-          isOverLimit ? 'bg-red-900/20 text-red-300' :
-          isInSweetSpot ? 'bg-green-900/20 text-green-300' :
-          'bg-gray-800/30 text-gray-400'
-        }`}>
-          <span className={platform.color}>{platform.icon} {platform.name}:</span>
-          <span className="ml-2">
-            {count}/{platform.charLimit} chars
-            {isOverLimit && ' ⚠️ Over limit'}
-            {isInSweetSpot && ' ✓ Sweet spot'}
-          </span>
-        </div>
-      )
-    }).filter(Boolean)
-  }
+    // 🔧 FIXED: Add null check for postData.content
+    const count = postData.content?.length || 0 // Changed from postData.content.length to postData.content?.length || 0
+    const isOverLimit = count > platform.charLimit
+    const isInSweetSpot = count >= parseInt(platform.sweet.split('-')[0]) && 
+                         count <= parseInt(platform.sweet.split('-')[1])
+    
+    return (
+      <div key={platformId} className={`text-xs p-2 rounded ${
+        isOverLimit ? 'bg-red-900/20 text-red-300' :
+        isInSweetSpot ? 'bg-green-900/20 text-green-300' :
+        'bg-gray-800/30 text-gray-400'
+      }`}>
+        <span className={platform.color}>{platform.icon} {platform.name}:</span>
+        <span className="ml-2">
+          {count}/{platform.charLimit} chars
+          {isOverLimit && ' ⚠️ Over limit'}
+          {isInSweetSpot && ' ✅ Sweet spot'}
+        </span>
+      </div>
+    )
+  }).filter(Boolean)
+}
 
   // Filter library images
   const getFilteredLibraryImages = () => {
@@ -576,10 +576,10 @@ export default function EnhancedPostCreation() {
             </div>
             
             <button
-              onClick={generateAIContent}
-              disabled={isGeneratingAI || !aiPrompt.trim() || postData.businesses.length === 0 || postData.platforms.length === 0}
-              className="btn btn-primary"
-            >
+            onClick={generateAI} // Changed from generateAIContent to generateAI
+            disabled={isGeneratingAI || !aiPrompt.trim() || postData.businesses.length === 0 || postData.platforms.length === 0}
+            className="btn btn-primary"
+          >
               {isGeneratingAI ? '🤖 Generating...' : '🤖 Generate AI Content'}
             </button>
           </div>
