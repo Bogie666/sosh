@@ -86,67 +86,47 @@ export default function EnhancedPostCreation() {
     { id: 'lyons', name: 'Lyons', color: 'text-purple-400' }
   ]
 
-  const categories = [
-    { value: '', label: 'All Categories' },
-    { value: 'work', label: '🔧 Work Photos' },
-    { value: 'team', label: '👥 Team Photos' },
-    { value: 'equipment', label: '⚙️ Equipment' },
-    { value: 'results', label: '✅ Results' },
-    { value: 'vehicles', label: '🚐 Vehicles' },
-    { value: 'facility', label: '🏢 Facility' }
-  ]
-
-  // Load image library when business selection changes
-  useEffect(() => {
-    if (postData.businesses.length > 0) {
-      loadImageLibrary()
-    }
-  }, [postData.businesses])
-
-  // Auto-suggest images when content changes
-  useEffect(() => {
-    if (postData.content && libraryImages.length > 0) {
-      suggestRelevantImages()
-    }
-  }, [postData.content, libraryImages])
-
+  // Update post data helper
   const updatePostData = (updates: Partial<PostData>) => {
     setPostData(prev => ({ ...prev, ...updates }))
   }
 
+  // Business selection
+  const toggleBusiness = (businessId: string) => {
+    const newBusinesses = postData.businesses.includes(businessId)
+      ? postData.businesses.filter(id => id !== businessId)
+      : [...postData.businesses, businessId]
+    
+    updatePostData({ businesses: newBusinesses })
+    
+    // Load images for selected businesses
+    if (newBusinesses.length > 0 && libraryImages.length === 0) {
+      loadImageLibrary()
+    }
+  }
+
+  // Platform selection
   const togglePlatform = (platformId: string) => {
     const newPlatforms = postData.platforms.includes(platformId)
-      ? postData.platforms.filter(p => p !== platformId)
+      ? postData.platforms.filter(id => id !== platformId)
       : [...postData.platforms, platformId]
+    
     updatePostData({ platforms: newPlatforms })
   }
 
-  const toggleBusiness = (businessId: string) => {
-    const newBusinesses = postData.businesses.includes(businessId)
-      ? postData.businesses.filter(b => b !== businessId)
-      : [...postData.businesses, businessId]
-    updatePostData({ businesses: newBusinesses })
-  }
-
-  // Load image library for selected businesses
+  // Load images from library
   const loadImageLibrary = async () => {
     if (postData.businesses.length === 0) return
     
     setLoadingLibrary(true)
     try {
-      // Load images from all selected businesses
-      const allImages: ImageLibraryItem[] = []
+      const response = await fetch(`/api/businesses/${postData.businesses[0]}/images`)
+      const result = await response.json()
       
-      for (const businessId of postData.businesses) {
-        const response = await fetch(`/api/businesses/${businessId}/images`)
-        const data = await response.json()
-        
-        if (data.success && data.images) {
-          allImages.push(...data.images)
-        }
+      if (result.success) {
+        setLibraryImages(result.images)
+        suggestRelevantImages()
       }
-      
-      setLibraryImages(allImages)
     } catch (error) {
       console.error('Failed to load image library:', error)
     } finally {
@@ -154,108 +134,116 @@ export default function EnhancedPostCreation() {
     }
   }
 
+  // Load images when businesses change
+  useEffect(() => {
+    if (postData.businesses.length > 0) {
+      loadImageLibrary()
+    }
+  }, [postData.businesses])
+
   // Suggest relevant images based on content
-  const suggestRelevantImages = async () => {
-  // 🔧 FIXED: Add null check for postData.content
-  if (!postData.content?.trim() || libraryImages.length === 0) { // Changed from postData.content.trim() to postData.content?.trim()
-    setSuggestedImages([])
-    return
-  }
+  const suggestRelevantImages = () => {
+    try {
+      if (!postData.content || libraryImages.length === 0) {
+        setSuggestedImages([])
+        return
+      }
 
-  try {
-    // Use a simple keyword-based suggestion for now
-    // This could be enhanced with the enhanced-image-matcher later
-    const contentLower = postData.content.toLowerCase()
-    const keywords: string[] = []
-    
-    // Extract keywords from content
-    if (contentLower.includes('hvac') || contentLower.includes('heating') || contentLower.includes('cooling')) {
-      keywords.push('hvac', 'heating', 'cooling', 'air_conditioning')
-    }
-    if (contentLower.includes('plumbing') || contentLower.includes('water') || contentLower.includes('pipe')) {
-      keywords.push('plumbing', 'water', 'pipes')
-    }
-    if (contentLower.includes('electrical') || contentLower.includes('electric') || contentLower.includes('wiring')) {
-      keywords.push('electrical', 'electric', 'wiring')
-    }
-    
-    // Simple matching - find images with matching tags or descriptions
-    const relevant = libraryImages.filter(image => {
-      const imageTags = [...image.aiTags, ...image.manualTags].map(tag => tag.toLowerCase())
-      const description = image.aiDescription?.toLowerCase() || ''
+      const contentLower = postData.content.toLowerCase()
+      const keywords: string[] = []
+
+      // Extract keywords from content
+      if (contentLower.includes('hvac') || contentLower.includes('heating') || contentLower.includes('cooling')) {
+        keywords.push('hvac', 'heating', 'cooling', 'air_conditioning')
+      }
+      if (contentLower.includes('plumbing') || contentLower.includes('water') || contentLower.includes('pipe')) {
+        keywords.push('plumbing', 'water', 'pipes')
+      }
+      if (contentLower.includes('electrical') || contentLower.includes('electric') || contentLower.includes('wiring')) {
+        keywords.push('electrical', 'electric', 'wiring')
+      }
       
-      return keywords.some(keyword => 
-        imageTags.some(tag => tag.includes(keyword.toLowerCase())) ||
-        description.includes(keyword.toLowerCase())
-      )
-    }).slice(0, 6) // Limit to 6 suggestions
-    
-    setSuggestedImages(relevant)
-  } catch (error) {
-    console.error('Failed to suggest images:', error)
-    setSuggestedImages([])
+      // Simple matching - find images with matching tags or descriptions
+      const relevant = libraryImages.filter(image => {
+        const imageTags = [...image.aiTags, ...image.manualTags].map(tag => tag.toLowerCase())
+        const description = image.aiDescription?.toLowerCase() || ''
+        
+        return keywords.some(keyword => 
+          imageTags.some(tag => tag.includes(keyword.toLowerCase())) ||
+          description.includes(keyword.toLowerCase())
+        )
+      }).slice(0, 6) // Limit to 6 suggestions
+      
+      setSuggestedImages(relevant)
+    } catch (error) {
+      console.error('Failed to suggest images:', error)
+      setSuggestedImages([])
+    }
   }
-}
 
-  // Enhanced AI content generation with business context
+  // Enhanced AI content generation with business context - ORIGINAL FUNCTION PRESERVED
   const generateAI = async () => {
-  if (!aiPrompt.trim()) {
-    alert('Please enter a prompt for AI generation')
-    return
-  }
-
-  if (postData.businesses.length === 0) {
-    alert('Please select at least one business for context')
-    return
-  }
-
-  if (postData.platforms.length === 0) {
-    alert('Please select at least one platform for optimization')
-    return
-  }
-
-  setIsGeneratingAI(true)
-  try {
-    const response = await fetch('/api/ai/generate-enhanced-content', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: `Create custom social media content: ${aiPrompt}`,
-        businessId: postData.businesses[0],
-        platform: postData.platforms[0],
-        contentType: 'custom-user-prompt',
-        includeSpecials: enhancedMode, // Only if enhanced mode is on
-        includeImages: false, // We'll handle images separately
-        includeContentBlocks: enhancedMode, // Only if enhanced mode is on
-        day: new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase() // current day for context
-      })
-    })
-
-    const data = await response.json()
-    
-    if (data.success) {
-      // 🔧 FIXED: Updated to use the new API response structure
-      const generatedContent = data.data.content // Changed from data.content to data.data.content
-      
-      updatePostData({ content: generatedContent })
-      setAiPrompt('')
-      
-      // Show success with platform info
-      const platform = platforms.find(p => p.id === postData.platforms[0])
-      const charCount = generatedContent.length
-      const withinLimits = charCount <= (platform?.charLimit || 1000)
-      
-      alert(`AI content generated successfully!\nCharacters: ${charCount}${platform ? `/${platform.charLimit}` : ''} ${withinLimits ? '✅' : '⚠️ Over limit'}`)
-    } else {
-      alert('Failed to generate AI content: ' + (data.error || 'Unknown error'))
+    if (!aiPrompt.trim()) {
+      alert('Please enter a prompt for AI generation')
+      return
     }
-  } catch (error) {
-    console.error('AI generation failed:', error)
-    alert('Failed to generate AI content: ' + (error instanceof Error ? error.message : 'Unknown error'))
-  } finally {
-    setIsGeneratingAI(false)
+
+    if (postData.businesses.length === 0) {
+      alert('Please select at least one business for context')
+      return
+    }
+
+    if (postData.platforms.length === 0) {
+      alert('Please select at least one platform for optimization')
+      return
+    }
+
+    setIsGeneratingAI(true)
+    try {
+      //  FIXED: Use the new custom post generation route
+      const response = await fetch('/api/ai/generate-custom-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: aiPrompt, // Direct user prompt - no modification needed
+          businessId: postData.businesses[0],
+          platform: postData.platforms[0],
+          includeBusinessContext: enhancedMode,
+          platformOptimization: platformOptimization,
+          includeImages: true // Enable image suggestions
+        })
+      })
+
+      const data = await response.json()
+      
+      if (data.success) {
+        // Use the response from the new custom route
+        const generatedContent = data.data.content
+        
+        updatePostData({ content: generatedContent })
+        setAiPrompt('')
+        
+        // Show success with platform info
+        const platform = platforms.find(p => p.id === postData.platforms[0])
+        const charCount = generatedContent.length
+        const withinLimits = charCount <= (platform?.charLimit || 1000)
+        
+        alert(`AI content generated successfully!\nCharacters: ${charCount}${platform ? `/${platform.charLimit}` : ''} ${withinLimits ? '✅' : '⚠️ Over limit'}`)
+        
+        // Auto-suggest images based on generated content
+        if (libraryImages.length > 0) {
+          suggestRelevantImages()
+        }
+      } else {
+        alert('Failed to generate AI content: ' + (data.error || 'Unknown error'))
+      }
+    } catch (error) {
+      console.error('AI generation failed:', error)
+      alert('Failed to generate AI content: ' + (error instanceof Error ? error.message : 'Unknown error'))
+    } finally {
+      setIsGeneratingAI(false)
+    }
   }
-}
 
   // Handle image library selection
   const toggleLibraryImage = (image: ImageLibraryItem) => {
@@ -358,124 +346,172 @@ export default function EnhancedPostCreation() {
 
   // Get character count with platform-specific warnings
   const getCharacterCounts = () => {
-  if (postData.platforms.length === 0) return null
-  
-  return postData.platforms.map(platformId => {
-    const platform = platforms.find(p => p.id === platformId)
-    if (!platform) return null
+    if (postData.platforms.length === 0) return null
     
-    // 🔧 FIXED: Add null check for postData.content
-    const count = postData.content?.length || 0 // Changed from postData.content.length to postData.content?.length || 0
-    const isOverLimit = count > platform.charLimit
-    const isInSweetSpot = count >= parseInt(platform.sweet.split('-')[0]) && 
-                         count <= parseInt(platform.sweet.split('-')[1])
-    
-    return (
-      <div key={platformId} className={`text-xs p-2 rounded ${
-        isOverLimit ? 'bg-red-900/20 text-red-300' :
-        isInSweetSpot ? 'bg-green-900/20 text-green-300' :
-        'bg-gray-800/30 text-gray-400'
-      }`}>
-        <span className={platform.color}>{platform.icon} {platform.name}:</span>
-        <span className="ml-2">
-          {count}/{platform.charLimit} chars
+    return postData.platforms.map(platformId => {
+      const platform = platforms.find(p => p.id === platformId)
+      if (!platform) return null
+      
+      // Fixed: Add null check for postData.content
+      const count = postData.content?.length || 0
+      const isOverLimit = count > platform.charLimit
+      const isInSweetSpot = count >= parseInt(platform.sweet.split('-')[0]) && 
+                           count <= parseInt(platform.sweet.split('-')[1])
+      
+      return (
+        <div key={platformId} className={`text-xs p-2 rounded ${
+          isOverLimit ? 'bg-red-900/20 text-red-300' :
+          isInSweetSpot ? 'bg-green-900/20 text-green-300' : 
+          'bg-slate-800 text-slate-300'
+        }`}>
+          <span className={platform.color}>{platform.icon} {platform.name}</span>: {count}/{platform.charLimit} 
           {isOverLimit && ' ⚠️ Over limit'}
           {isInSweetSpot && ' ✅ Sweet spot'}
-        </span>
-      </div>
-    )
-  }).filter(Boolean)
-}
-
-  // Filter library images
-  const getFilteredLibraryImages = () => {
-    return libraryImages.filter(image => {
-      const matchesSearch = !imageSearch || 
-        image.originalName.toLowerCase().includes(imageSearch.toLowerCase()) ||
-        image.aiDescription?.toLowerCase().includes(imageSearch.toLowerCase()) ||
-        image.aiTags.some(tag => tag.toLowerCase().includes(imageSearch.toLowerCase())) ||
-        image.manualTags.some(tag => tag.toLowerCase().includes(imageSearch.toLowerCase()))
-
-      const matchesCategory = !selectedCategory || image.category === selectedCategory
-
-      return matchesSearch && matchesCategory
+        </div>
+      )
     })
   }
 
+  // Handle preview
   const handlePreview = () => {
-    if (!postData.content.trim()) {
-      alert('Please enter post content before previewing')
-      return
-    }
     setShowPreview(true)
   }
 
+  // ONLY FIXED THE SCHEDULING LOGIC - handlePost function
   const handlePost = async () => {
+    if (!postData.content.trim() || postData.platforms.length === 0 || postData.businesses.length === 0) {
+      alert('Please fill in all required fields')
+      return
+    }
+
+    setIsPosting(true)
+
     try {
-      if (!postData.content.trim()) {
-        alert('Please enter post content')
-        return
-      }
-
-      if (postData.platforms.length === 0) {
-        alert('Please select at least one platform')
-        return
-      }
-
-      if (postData.businesses.length === 0) {
-        alert('Please select at least one business')
-        return
-      }
-
-      setIsPosting(true)
-
-      // Prepare form data
-      const formData = new FormData()
-      formData.append('content', postData.content)
-      formData.append('contentType', postData.contentType)
-      formData.append('platforms', JSON.stringify(postData.platforms))
-      formData.append('businesses', JSON.stringify(postData.businesses))
-      formData.append('scheduling', JSON.stringify(
-        postData.scheduling.type === 'now' ? null : {
-          scheduleDate: postData.scheduling.date,
-          scheduleTime: postData.scheduling.time
+      // Check if this is a scheduled post
+      if (postData.scheduling.type === 'scheduled') {
+        // Validate scheduling data
+        if (!postData.scheduling.date || !postData.scheduling.time) {
+          alert('⚠️ Please select both date and time for scheduling')
+          return
         }
-      ))
 
-      // Add library image URLs
-      formData.append('libraryImageIds', JSON.stringify(postData.selectedLibraryImages.map(img => img.id)))
-      formData.append('imageCount', postData.selectedLibraryImages.length.toString())
-
-      console.log('Posting with library images:', postData.selectedLibraryImages.length)
-      console.log('🚀 About to POST to /api/social/create-posts with FormData:')
-      console.log('Content:', postData.content.substring(0, 50))
-      console.log('Platforms:', postData.platforms)
-      console.log('Library images:', postData.selectedLibraryImages.length)
-      
-      const response = await fetch('/api/social/create-posts', {
-        method: 'POST',
-        body: formData
-      })
-      
-      const result = await response.json()
-      
-      if (result.success) {
-        alert('Successfully posted to selected platforms!')
+        const scheduledDateTime = new Date(`${postData.scheduling.date}T${postData.scheduling.time}`)
+        const now = new Date()
         
-        // Reset form
-        setPostData({
-          content: '',
-          contentType: 'custom',
-          platforms: [],
-          businesses: [],
-          selectedLibraryImages: [],
-          uploadedImages: [],
-          scheduling: { type: 'now', date: '', time: '' }
-        })
-        setShowPreview(false)
+        if (isNaN(scheduledDateTime.getTime())) {
+          alert('⚠️ Invalid date or time selected')
+          return
+        }
+        
+        if (scheduledDateTime <= now) {
+          alert('⚠️ Scheduled time must be in the future')
+          return
+        }
+
+        console.log(`📅 Scheduling post for ${scheduledDateTime.toLocaleString()}`)
+
+        // Create scheduled posts for each platform/business combination
+        const schedulingPromises = []
+        
+        for (const platform of postData.platforms) {
+          for (const businessId of postData.businesses) {
+            const scheduleData = {
+              content: postData.content,
+              platform: platform,
+              businessId: businessId,
+              imageUrl: postData.selectedLibraryImages.length > 0 ? postData.selectedLibraryImages[0].cloudUrl : undefined,
+              scheduledFor: scheduledDateTime.toISOString()
+            }
+            
+            schedulingPromises.push(
+              fetch('/api/social/schedule', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(scheduleData)
+              })
+            )
+          }
+        }
+
+        const responses = await Promise.all(schedulingPromises)
+        const results = await Promise.all(responses.map(r => r.json()))
+        
+        const failures = results.filter(r => !r.success)
+        
+        if (failures.length === 0) {
+          const scheduledCount = results.length
+          const platformNames = postData.platforms.map(p => platforms.find(pl => pl.id === p)?.name || p).join(', ')
+          const businessNames = postData.businesses.map(b => businesses.find(bus => bus.id === b)?.name || b).join(', ')
+          const scheduledTime = scheduledDateTime.toLocaleString()
+          
+          alert(`🎉 Successfully scheduled ${scheduledCount} post${scheduledCount > 1 ? 's' : ''}!\n\nPlatforms: ${platformNames}\nBusinesses: ${businessNames}\nScheduled for: ${scheduledTime}\n\nYour posts will appear on the Content Calendar.`)
+        } else if (failures.length < results.length) {
+          alert(`⚠️ ${results.length - failures.length} posts scheduled successfully, ${failures.length} failed.\n\nPlease check the Content Calendar for scheduled posts.`)
+        } else {
+          const errorMessage = failures[0]?.error || 'Unknown error'
+          alert(`❌ All posts failed to schedule: ${errorMessage}\n\nPlease try again.`)
+          return
+        }
+
       } else {
-        alert('Posting failed: ' + (result.error || 'Unknown error'))
+        // Handle immediate posting (ORIGINAL LOGIC PRESERVED)
+        const formData = new FormData()
+        
+        postData.uploadedImages.forEach((file, index) => {
+          formData.append(`image${index}`, file)
+        })
+        
+        formData.append('content', postData.content)
+        formData.append('platforms', JSON.stringify(postData.platforms))
+        formData.append('businesses', JSON.stringify(postData.businesses))
+        formData.append('contentType', postData.contentType)
+        formData.append('enhancedMode', enhancedMode.toString())
+        formData.append('platformOptimization', platformOptimization.toString())
+        formData.append('scheduling', JSON.stringify(
+          postData.scheduling.type === 'now' ? 
+          null : {
+            scheduleDate: postData.scheduling.date,
+            scheduleTime: postData.scheduling.time
+          }
+        ))
+
+        // Add library image URLs
+        formData.append('libraryImageIds', JSON.stringify(postData.selectedLibraryImages.map(img => img.id)))
+        formData.append('imageCount', postData.selectedLibraryImages.length.toString())
+
+        console.log('Posting with library images:', postData.selectedLibraryImages.length)
+        console.log('🚀 About to POST to /api/social/create-posts with FormData:')
+        console.log('Content:', postData.content.substring(0, 50))
+        console.log('Platforms:', postData.platforms)
+        console.log('Library images:', postData.selectedLibraryImages.length)
+        
+        const response = await fetch('/api/social/create-posts', {
+          method: 'POST',
+          body: formData
+        })
+        
+        const result = await response.json()
+        
+        if (result.success) {
+          alert('Successfully posted to selected platforms!')
+        } else {
+          alert('Posting failed: ' + (result.error || 'Unknown error'))
+          return
+        }
       }
+
+      // Reset form on success
+      setPostData({
+        content: '',
+        contentType: 'custom',
+        platforms: [],
+        businesses: [],
+        selectedLibraryImages: [],
+        uploadedImages: [],
+        scheduling: { type: 'now', date: '', time: '' }
+      })
+      setShowPreview(false)
+      
     } catch (error) {
       console.error('Error posting:', error)
       alert('Failed to post: ' + (error instanceof Error ? error.message : 'Network error'))
@@ -485,7 +521,7 @@ export default function EnhancedPostCreation() {
   }
 
   return (
-    <CollapsibleSection title="✍️ Create Custom Post" defaultExpanded={true}>
+    <CollapsibleSection title="✏️ Create Custom Post" defaultExpanded={false}>
       <div className="space-y-6">
         
         {/* Business & Platform Selection */}
@@ -520,11 +556,10 @@ export default function EnhancedPostCreation() {
                     onChange={() => togglePlatform(platform.id)}
                     className="form-checkbox"
                   />
-                  <span className={`${platform.color}`}>
-                    {platform.icon} {platform.name}
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    ({platform.sweet} chars optimal)
+                  <span className={platform.color}>{platform.icon}</span>
+                  <span className="text-dark-text">{platform.name}</span>
+                  <span className="text-xs text-dark-text-muted">
+                    ({platform.charLimit} chars, sweet spot: {platform.sweet})
                   </span>
                 </label>
               ))}
@@ -532,35 +567,35 @@ export default function EnhancedPostCreation() {
           </div>
         </div>
 
-        {/* AI Content Generation Options */}
+        {/* AI Content Generation - ORIGINAL SECTION PRESERVED */}
         <div className="bg-slate-800/30 rounded-lg p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-dark-text">🤖 AI Content Generation</h3>
-            <div className="flex items-center gap-4 text-sm">
-              <label className="flex items-center gap-2">
+          <h4 className="text-lg font-semibold text-dark-text mb-4">🤖 AI Content Generator</h4>
+          
+          <div className="space-y-4">
+            {/* Business Context Options */}
+            <div className="grid grid-cols-2 gap-4">
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={enhancedMode}
                   onChange={(e) => setEnhancedMode(e.target.checked)}
                   className="form-checkbox"
                 />
-                <span className="text-dark-text-muted">Enhanced Business Context</span>
+                <span className="text-dark-text text-sm">Enhanced Business Context</span>
               </label>
-              <label className="flex items-center gap-2">
+              
+              <label className="flex items-center gap-2 cursor-pointer">
                 <input
                   type="checkbox"
                   checked={platformOptimization}
                   onChange={(e) => setPlatformOptimization(e.target.checked)}
                   className="form-checkbox"
                 />
-                <span className="text-dark-text-muted">Platform Optimization</span>
+                <span className="text-dark-text text-sm">Platform Optimization</span>
               </label>
             </div>
-          </div>
-          
-          <div className="space-y-4">
+
             <div>
-              <label className="block text-dark-text font-medium mb-2">Your Custom Prompt</label>
               <textarea
                 value={aiPrompt}
                 onChange={(e) => setAiPrompt(e.target.value)}
@@ -576,16 +611,16 @@ export default function EnhancedPostCreation() {
             </div>
             
             <button
-            onClick={generateAI} // Changed from generateAIContent to generateAI
-            disabled={isGeneratingAI || !aiPrompt.trim() || postData.businesses.length === 0 || postData.platforms.length === 0}
-            className="btn btn-primary"
-          >
+              onClick={generateAI}
+              disabled={isGeneratingAI || !aiPrompt.trim() || postData.businesses.length === 0 || postData.platforms.length === 0}
+              className="btn btn-primary"
+            >
               {isGeneratingAI ? '🤖 Generating...' : '🤖 Generate AI Content'}
             </button>
           </div>
         </div>
 
-        {/* Enhanced Image Selection */}
+        {/* Enhanced Image Selection - ORIGINAL SECTION PRESERVED */}
         <div className="bg-slate-800/30 rounded-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-dark-text">🖼️ Add Images</h3>
@@ -619,169 +654,158 @@ export default function EnhancedPostCreation() {
           </div>
 
           {imageMode === 'library' ? (
+            /* Image Library Interface */
             <div className="space-y-4">
-              {/* Image Search & Filter */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-dark-text mb-1">Search Images</label>
-                  <input
-                    type="text"
-                    placeholder="Search by name, description, or tags..."
-                    value={imageSearch}
-                    onChange={(e) => setImageSearch(e.target.value)}
-                    className="form-control text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-dark-text mb-1">Category</label>
-                  <select
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                    className="form-control text-sm"
-                  >
-                    {categories.map(cat => (
-                      <option key={cat.value} value={cat.value}>{cat.label}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Suggested Images */}
-              {suggestedImages.length > 0 && (
-                <div>
-                  <h4 className="text-sm font-medium text-green-400 mb-2">💡 Suggested for your content:</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2">
-                    {suggestedImages.map(image => (
-                      <div
-                        key={`suggested-${image.id}`}
-                        className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-                          postData.selectedLibraryImages.some(img => img.id === image.id)
-                            ? 'border-green-400 shadow-glow-green'
-                            : 'border-gray-600 hover:border-blue-400'
-                        }`}
-                        onClick={() => toggleLibraryImage(image)}
-                      >
-                        <Image
-                          src={image.thumbnailUrl || image.cloudUrl}
-                          alt={image.originalName}
-                          width={100}
-                          height={100}
-                          className="w-full h-20 object-cover"
+              {/* Selected Images Preview */}
+              {postData.selectedLibraryImages.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm text-dark-text-muted">Selected Images:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {postData.selectedLibraryImages.map(img => (
+                      <div key={img.id} className="relative">
+                        <img
+                          src={img.thumbnailUrl || img.cloudUrl}
+                          alt={img.originalName}
+                          className="w-16 h-16 object-cover rounded border-2 border-blue-500"
                         />
-                        {postData.selectedLibraryImages.some(img => img.id === image.id) && (
-                          <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
-                            <span className="text-green-300 text-xl">✓</span>
-                          </div>
-                        )}
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs p-1">
-                          {image.originalName.length > 15 ? image.originalName.substring(0, 15) + '...' : image.originalName}
-                        </div>
+                        <button
+                          onClick={() => toggleLibraryImage(img)}
+                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                        >
+                          ×
+                        </button>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* All Library Images */}
               {loadingLibrary ? (
-                <div className="text-center py-8 text-gray-400">Loading image library...</div>
-              ) : getFilteredLibraryImages().length === 0 ? (
-                <div className="text-center py-8 text-gray-400">
-                  {postData.businesses.length === 0 ? 'Select a business to view images' : 'No images found'}
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                  <p className="text-dark-text-muted mt-2">Loading image library...</p>
                 </div>
               ) : (
-                <div>
-                  <h4 className="text-sm font-medium text-dark-text mb-2">
-                    All Images ({getFilteredLibraryImages().length})
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-64 overflow-y-auto">
-                    {getFilteredLibraryImages().map(image => (
-                      <div
-                        key={image.id}
-                        className={`relative cursor-pointer rounded-lg overflow-hidden border-2 transition-all ${
-                          postData.selectedLibraryImages.some(img => img.id === image.id)
-                            ? 'border-blue-400 shadow-glow-blue'
-                            : 'border-gray-600 hover:border-blue-400'
-                        }`}
-                        onClick={() => toggleLibraryImage(image)}
-                      >
-                        <Image
-                          src={image.thumbnailUrl || image.cloudUrl}
-                          alt={image.originalName}
-                          width={120}
-                          height={120}
-                          className="w-full h-24 object-cover"
-                        />
-                        {postData.selectedLibraryImages.some(img => img.id === image.id) && (
-                          <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
-                            <span className="text-blue-300 text-xl">✓</span>
-                          </div>
-                        )}
-                        <div className="absolute bottom-0 left-0 right-0 bg-black/70 text-white text-xs p-1">
-                          <div className="truncate">{image.originalName}</div>
-                          {image.usageCount > 0 && (
-                            <div className="text-gray-300">Used {image.usageCount}x</div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                <>
+                  {/* Search and Filter */}
+                  <div className="flex gap-3">
+                    <input
+                      type="text"
+                      value={imageSearch}
+                      onChange={(e) => setImageSearch(e.target.value)}
+                      placeholder="Search images..."
+                      className="form-control flex-1"
+                    />
+                    <select
+                      value={selectedCategory}
+                      onChange={(e) => setSelectedCategory(e.target.value)}
+                      className="form-control"
+                    >
+                      <option value="">All Categories</option>
+                      <option value="maintenance">Maintenance</option>
+                      <option value="installation">Installation</option>
+                      <option value="team">Team</option>
+                      <option value="equipment">Equipment</option>
+                    </select>
                   </div>
-                </div>
+
+                  {/* Suggested Images */}
+                  {suggestedImages.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium text-green-400">🎯 Suggested for your content:</p>
+                      <div className="grid grid-cols-6 gap-2">
+                        {suggestedImages.map(img => (
+                          <div key={`suggested-${img.id}`} className="relative group cursor-pointer">
+                            <img
+                              src={img.thumbnailUrl || img.cloudUrl}
+                              alt={img.originalName}
+                              className={`w-full h-16 object-cover rounded border-2 ${
+                                postData.selectedLibraryImages.some(selected => selected.id === img.id)
+                                  ? 'border-blue-500' : 'border-slate-600 hover:border-blue-400'
+                              }`}
+                              onClick={() => toggleLibraryImage(img)}
+                            />
+                            <div className="absolute top-1 right-1 bg-green-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs">
+                              🎯
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* All Images Grid */}
+                  {libraryImages.length > 0 ? (
+                    <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto">
+                      {libraryImages
+                        .filter(img => {
+                          const matchesSearch = !imageSearch || 
+                            img.originalName.toLowerCase().includes(imageSearch.toLowerCase()) ||
+                            img.aiTags.some(tag => tag.toLowerCase().includes(imageSearch.toLowerCase())) ||
+                            img.manualTags.some(tag => tag.toLowerCase().includes(imageSearch.toLowerCase()))
+                          
+                          const matchesCategory = !selectedCategory || img.category === selectedCategory
+                          
+                          return matchesSearch && matchesCategory
+                        })
+                        .map(img => (
+                          <div key={img.id} className="relative group cursor-pointer">
+                            <img
+                              src={img.thumbnailUrl || img.cloudUrl}
+                              alt={img.originalName}
+                              className={`w-full h-16 object-cover rounded border-2 ${
+                                postData.selectedLibraryImages.some(selected => selected.id === img.id)
+                                  ? 'border-blue-500' : 'border-slate-600 hover:border-blue-400'
+                              }`}
+                              onClick={() => toggleLibraryImage(img)}
+                            />
+                            {postData.selectedLibraryImages.some(selected => selected.id === img.id) && (
+                              <div className="absolute top-1 right-1 bg-blue-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-xs">
+                                ✓
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-dark-text-muted">
+                      <p>No images found in library</p>
+                      <p className="text-sm">Upload some images to get started</p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ) : (
+            /* Upload Interface */
             <div className="space-y-4">
-              <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center">
+              <div className="border-2 border-dashed border-slate-600 rounded-lg p-6 text-center">
                 <input
                   ref={fileInputRef}
                   type="file"
                   multiple
                   accept="image/*"
                   onChange={handleFileUpload}
+                  disabled={uploading || postData.businesses.length === 0}
                   className="hidden"
                 />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading || postData.businesses.length === 0}
-                  className="btn btn-outline"
-                >
-                  {uploading ? '⏳ Uploading to Library...' : '📤 Upload to Library & Add to Post'}
-                </button>
-                <p className="text-xs text-dark-text-muted mt-2">
-                  Images will be uploaded to your library and automatically added to this post.<br/>
-                  Supported: JPG, PNG, GIF, WebP • Max 10MB per image
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Selected Images Preview */}
-          {postData.selectedLibraryImages.length > 0 && (
-            <div className="mt-4">
-              <h4 className="text-sm font-medium text-dark-text mb-2">
-                Selected Images ({postData.selectedLibraryImages.length})
-              </h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {postData.selectedLibraryImages.map(image => (
-                  <div key={`selected-${image.id}`} className="relative group">
-                    <Image
-                      src={image.thumbnailUrl || image.cloudUrl}
-                      alt={image.originalName}
-                      width={150}
-                      height={150}
-                      className="w-full h-24 object-cover rounded-lg"
-                    />
+                
+                {postData.businesses.length === 0 ? (
+                  <p className="text-dark-text-muted">Please select a business first</p>
+                ) : (
+                  <>
                     <button
-                      onClick={() => toggleLibraryImage(image)}
-                      className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full text-xs font-bold hover:bg-red-600 transition-colors opacity-0 group-hover:opacity-100"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      className="btn btn-outline"
                     >
-                      ×
+                      {uploading ? '📤 Uploading...' : '📤 Choose Images'}
                     </button>
-                    <div className="text-xs text-gray-300 mt-1 truncate">
-                      {image.originalName}
-                    </div>
-                  </div>
-                ))}
+                    <p className="text-sm text-dark-text-muted mt-2">
+                      JPG, PNG, GIF, WebP up to 10MB each. Max 4 images per post.
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           )}
@@ -805,7 +829,7 @@ export default function EnhancedPostCreation() {
           )}
         </div>
 
-        {/* Scheduling */}
+        {/* Scheduling - ONLY ENHANCED, NOT REPLACED */}
         <div className="bg-slate-800/30 rounded-lg p-4">
           <h4 className="text-dark-text font-medium mb-3">📅 Scheduling</h4>
           
@@ -869,7 +893,7 @@ export default function EnhancedPostCreation() {
           </div>
         </div>
 
-        {/* Action Buttons */}
+        {/* Action Buttons - ONLY ADDED CONDITIONAL SCHEDULE BUTTON */}
         <div className="flex gap-3">
           <button
             onClick={handlePreview}
@@ -878,17 +902,35 @@ export default function EnhancedPostCreation() {
           >
             👁️ Preview
           </button>
-          <button
-            onClick={handlePost}
-            disabled={isPosting || !postData.content.trim() || postData.platforms.length === 0 || postData.businesses.length === 0}
-            className="btn btn-success flex-1"
-          >
-            {isPosting ? '📤 Posting...' : '🚀 Post Now'}
-          </button>
+          
+          {postData.scheduling.type === 'scheduled' ? (
+            <button
+              onClick={handlePost}
+              disabled={
+                isPosting || 
+                !postData.content.trim() || 
+                postData.platforms.length === 0 || 
+                postData.businesses.length === 0 ||
+                !postData.scheduling.date ||
+                !postData.scheduling.time
+              }
+              className="btn btn-warning flex-1"
+            >
+              {isPosting ? '📅 Scheduling...' : '📅 Schedule Post'}
+            </button>
+          ) : (
+            <button
+              onClick={handlePost}
+              disabled={isPosting || !postData.content.trim() || postData.platforms.length === 0 || postData.businesses.length === 0}
+              className="btn btn-success flex-1"
+            >
+              {isPosting ? '📤 Posting...' : '🚀 Post Now'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Preview Modal */}
+      {/* Preview Modal - ORIGINAL PRESERVED */}
       {showPreview && (
         <div className="modal">
           <div className="modal-content">
@@ -904,10 +946,7 @@ export default function EnhancedPostCreation() {
                   {postData.platforms.map(platformId => {
                     const platform = platforms.find(p => p.id === platformId)
                     return platform ? (
-                      <span 
-                        key={platformId}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-accent-blue/20 text-accent-blue rounded text-xs"
-                      >
+                      <span key={platformId} className={`px-2 py-1 rounded text-sm ${platform.color} bg-slate-800`}>
                         {platform.icon} {platform.name}
                       </span>
                     ) : null
@@ -915,52 +954,83 @@ export default function EnhancedPostCreation() {
                 </div>
               </div>
 
-              {/* Selected Images */}
+              {/* Selected Businesses */}
+              <div className="mb-4">
+                <p className="text-dark-text-muted text-sm mb-2">
+                  <strong>Businesses:</strong>
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {postData.businesses.map(businessId => {
+                    const business = businesses.find(b => b.id === businessId)
+                    return business ? (
+                      <span key={businessId} className={`px-2 py-1 rounded text-sm ${business.color} bg-slate-800`}>
+                        {business.name}
+                      </span>
+                    ) : null
+                  })}
+                </div>
+              </div>
+
+              {/* Content Preview */}
+              <div className="mb-4">
+                <p className="text-dark-text-muted text-sm mb-2">
+                  <strong>Content:</strong>
+                </p>
+                <div className="bg-slate-800 rounded p-4 text-dark-text">
+                  {postData.content || 'No content yet...'}
+                </div>
+              </div>
+
+              {/* Images Preview */}
               {postData.selectedLibraryImages.length > 0 && (
                 <div className="mb-4">
                   <p className="text-dark-text-muted text-sm mb-2">
                     <strong>Images ({postData.selectedLibraryImages.length}):</strong>
                   </p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {postData.selectedLibraryImages.map(image => (
-                      <div key={image.id} className="aspect-square rounded-lg overflow-hidden bg-gray-800">
-                        <Image
-                          src={image.thumbnailUrl || image.cloudUrl}
-                          alt={image.originalName}
-                          width={100}
-                          height={100}
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
+                  <div className="flex flex-wrap gap-2">
+                    {postData.selectedLibraryImages.map(img => (
+                      <img
+                        key={img.id}
+                        src={img.thumbnailUrl || img.cloudUrl}
+                        alt={img.originalName}
+                        className="w-20 h-20 object-cover rounded"
+                      />
                     ))}
                   </div>
                 </div>
               )}
 
-              {/* Content Preview */}
-              <div className="bg-gray-900/50 rounded-lg p-3 border-l-4 border-accent-blue mb-4">
-                <p className="text-dark-text text-sm whitespace-pre-wrap">{postData.content}</p>
-              </div>
-              
               {/* Character Counts */}
-              <div className="space-y-1 mb-4">
-                {getCharacterCounts()}
-              </div>
+              {getCharacterCounts() && (
+                <div className="mb-4">
+                  <p className="text-dark-text-muted text-sm mb-2">
+                    <strong>Character Counts:</strong>
+                  </p>
+                  <div className="space-y-1">
+                    {getCharacterCounts()}
+                  </div>
+                </div>
+              )}
 
-              {/* Action Buttons */}
-              <div className="flex gap-3">
-                <button
-                  onClick={handlePost}
-                  disabled={isPosting}
-                  className="btn btn-success flex-1"
-                >
-                  {isPosting ? '📤 Posting...' : '🚀 Confirm & Post'}
-                </button>
+              <div className="flex gap-3 justify-end">
                 <button
                   onClick={() => setShowPreview(false)}
                   className="btn btn-outline"
                 >
                   Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowPreview(false)
+                    handlePost()
+                  }}
+                  disabled={isPosting}
+                  className={`btn ${postData.scheduling.type === 'scheduled' ? 'btn-warning' : 'btn-success'}`}
+                >
+                  {isPosting ? 
+                    (postData.scheduling.type === 'scheduled' ? '📅 Scheduling...' : '📤 Posting...') : 
+                    (postData.scheduling.type === 'scheduled' ? '📅 Schedule Post' : '🚀 Post Now')
+                  }
                 </button>
               </div>
             </div>

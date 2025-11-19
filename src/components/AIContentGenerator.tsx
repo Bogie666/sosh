@@ -1779,7 +1779,7 @@ const postNow = async (postId: string) => {
 
   if (loading) {
     return (
-      <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={true}>
+      <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={false}>
         <div className="flex items-center gap-3 p-8">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
           <span className="text-dark-text">Loading AI capabilities...</span>
@@ -1789,7 +1789,7 @@ const postNow = async (postId: string) => {
   }
 
   return (
-    <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={true}>
+    <CollapsibleSection title="🤖 AI Content Generator" defaultExpanded={false}>
       <div className="space-y-6">
         {/* Strategic Configuration */}
         <div className="bg-slate-900/30 rounded-lg p-6">

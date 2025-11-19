@@ -277,7 +277,7 @@ export default function ContentBlocksManager() {
   const currentBusinessEvergreenStatus = evergreenStatus?.businesses.find(b => b.businessId === selectedBusiness)
 
   return (
-    <CollapsibleSection title="🧩 Content Blocks Library" defaultExpanded={true}>
+    <CollapsibleSection title="🧩 Content Blocks Library" defaultExpanded={false}>
       <div className="space-y-6">
         
         {/* Business Selection */}

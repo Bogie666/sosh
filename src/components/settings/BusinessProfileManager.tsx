@@ -179,7 +179,7 @@ export default function BusinessProfileManager() {
 
   if (loading && !profile) {
     return (
-      <CollapsibleSection title="🏢 Business Profile Management" defaultExpanded={true}>
+      <CollapsibleSection title="🏢 Business Profile Management" defaultExpanded={false}>
         <div className="flex items-center gap-3 p-8">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-400"></div>
           <span className="text-dark-text">Loading business profiles...</span>
@@ -189,7 +189,7 @@ export default function BusinessProfileManager() {
   }
 
   return (
-    <CollapsibleSection title="🏢 Business Profile Management" defaultExpanded={true}>
+    <CollapsibleSection title="🏢 Business Profile Management" defaultExpanded={false}>
       <div className="space-y-6">
         
         {/* Business Selection */}

@@ -499,7 +499,7 @@ export default function ReviewManagement() {
   }
 
   return (
-    <CollapsibleSection title="📝 Review Management" defaultExpanded={true}>
+    <CollapsibleSection title="📝 Review Management" defaultExpanded={false}>
       <div className="space-y-6">
         
         {/* Controls */}
