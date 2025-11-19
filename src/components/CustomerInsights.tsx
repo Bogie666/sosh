@@ -50,6 +50,8 @@ export default function CustomerInsights() {
   const [selectedLocation, setSelectedLocation] = useState('all')
 
   const timeframes = [
+    { value: '1week', label: 'Last Week' },
+    { value: '2weeks', label: 'Last 2 Weeks' },
     { value: '1month', label: 'Last Month' },
     { value: '3months', label: 'Last 3 Months' },
     { value: '6months', label: 'Last 6 Months' },
@@ -143,6 +145,267 @@ export default function CustomerInsights() {
     if (rating >= 3.5) return '🔸'
     if (rating >= 3.0) return '🔶'
     return '🔻'
+  }
+
+  const printReport = () => {
+    if (!insights) return
+
+    const locationName = selectedLocation === 'all'
+      ? 'All Locations'
+      : locations.find(l => l.locationId === selectedLocation)?.name || 'Unknown'
+
+    const timeframeLabel = timeframes.find(tf => tf.value === selectedTimeframe)?.label || selectedTimeframe
+
+    const reportHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Customer Insights Report - ${new Date().toLocaleDateString()}</title>
+        <style>
+          * { margin: 0; padding: 0; box-sizing: border-box; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 40px;
+            max-width: 800px;
+            margin: 0 auto;
+            color: #333;
+            font-size: 11px;
+          }
+          .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #2563eb;
+          }
+          .header h1 { font-size: 22px; color: #1e40af; margin-bottom: 5px; }
+          .header .subtitle { color: #666; font-size: 12px; }
+          .header .meta { color: #888; font-size: 10px; margin-top: 5px; }
+
+          .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 10px;
+            margin-bottom: 20px;
+          }
+          .stat-box {
+            text-align: center;
+            padding: 12px 8px;
+            background: #f8fafc;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+          }
+          .stat-box .value { font-size: 20px; font-weight: bold; color: #1e40af; }
+          .stat-box .label { font-size: 9px; color: #64748b; margin-top: 2px; }
+
+          .section { margin-bottom: 15px; }
+          .section-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #e2e8f0;
+          }
+
+          .two-column { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+
+          .praise-box {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 6px;
+            padding: 10px;
+          }
+          .praise-box .title { color: #15803d; font-weight: 600; margin-bottom: 6px; }
+
+          .complaints-box {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 6px;
+            padding: 10px;
+          }
+          .complaints-box .title { color: #dc2626; font-weight: 600; margin-bottom: 6px; }
+
+          .list { list-style: none; }
+          .list li {
+            padding: 3px 0;
+            padding-left: 12px;
+            position: relative;
+            font-size: 10px;
+            line-height: 1.4;
+          }
+          .list li:before {
+            content: "•";
+            position: absolute;
+            left: 0;
+          }
+          .praise-box .list li:before { color: #15803d; }
+          .complaints-box .list li:before { color: #dc2626; }
+
+          .recommendations-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            padding: 10px;
+          }
+          .recommendations-box .title { color: #1d4ed8; font-weight: 600; margin-bottom: 6px; }
+          .recommendations-box .list li:before { color: #1d4ed8; content: "→"; }
+
+          .themes-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+          }
+          .theme-card {
+            padding: 8px;
+            border-radius: 4px;
+            font-size: 9px;
+          }
+          .theme-card.positive { background: #f0fdf4; border: 1px solid #bbf7d0; }
+          .theme-card.negative { background: #fef2f2; border: 1px solid #fecaca; }
+          .theme-card.neutral { background: #f8fafc; border: 1px solid #e2e8f0; }
+          .theme-card .name { font-weight: 600; margin-bottom: 3px; }
+          .theme-card .freq { font-size: 8px; color: #666; }
+
+          .rating-bars { margin-top: 8px; }
+          .rating-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+            font-size: 10px;
+          }
+          .rating-label { width: 25px; }
+          .rating-bar-bg {
+            flex: 1;
+            height: 8px;
+            background: #e2e8f0;
+            border-radius: 4px;
+            overflow: hidden;
+          }
+          .rating-bar {
+            height: 100%;
+            border-radius: 4px;
+          }
+          .rating-bar.high { background: #22c55e; }
+          .rating-bar.mid { background: #eab308; }
+          .rating-bar.low { background: #ef4444; }
+          .rating-count { width: 60px; text-align: right; font-size: 9px; color: #666; }
+
+          .footer {
+            margin-top: 20px;
+            padding-top: 10px;
+            border-top: 1px solid #e2e8f0;
+            text-align: center;
+            font-size: 9px;
+            color: #888;
+          }
+
+          @media print {
+            body { padding: 20px; }
+            @page { margin: 0.5in; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <h1>📊 Customer Insights Report</h1>
+          <div class="subtitle">${locationName}</div>
+          <div class="meta">${timeframeLabel} • Generated ${new Date(insights.generatedAt).toLocaleDateString()}</div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-box">
+            <div class="value">${insights.totalReviews}</div>
+            <div class="label">Total Reviews</div>
+          </div>
+          <div class="stat-box">
+            <div class="value">${insights.averageRating.toFixed(1)}⭐</div>
+            <div class="label">Avg Rating</div>
+          </div>
+          <div class="stat-box">
+            <div class="value">${insights.commonPraise.length}</div>
+            <div class="label">Praise Points</div>
+          </div>
+          <div class="stat-box">
+            <div class="value">${insights.commonComplaints.length}</div>
+            <div class="label">Issue Areas</div>
+          </div>
+        </div>
+
+        <div class="section">
+          <div class="section-title">⭐ Rating Distribution</div>
+          <div class="rating-bars">
+            ${[5, 4, 3, 2, 1].map(rating => {
+              const count = insights.ratingDistribution[rating] || 0
+              const percentage = insights.totalReviews > 0 ? (count / insights.totalReviews) * 100 : 0
+              const barClass = rating >= 4 ? 'high' : rating >= 3 ? 'mid' : 'low'
+              return `
+                <div class="rating-row">
+                  <span class="rating-label">${rating}★</span>
+                  <div class="rating-bar-bg">
+                    <div class="rating-bar ${barClass}" style="width: ${percentage}%"></div>
+                  </div>
+                  <span class="rating-count">${count} (${percentage.toFixed(0)}%)</span>
+                </div>
+              `
+            }).join('')}
+          </div>
+        </div>
+
+        <div class="section two-column">
+          <div class="praise-box">
+            <div class="title">✅ What Customers Love</div>
+            <ul class="list">
+              ${insights.commonPraise.map(item => `<li>${item}</li>`).join('')}
+            </ul>
+          </div>
+          <div class="complaints-box">
+            <div class="title">⚠️ Areas for Improvement</div>
+            <ul class="list">
+              ${insights.commonComplaints.map(item => `<li>${item}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+
+        ${insights.keyThemes.length > 0 ? `
+        <div class="section">
+          <div class="section-title">🔍 Key Themes</div>
+          <div class="themes-grid">
+            ${insights.keyThemes.slice(0, 6).map(theme => `
+              <div class="theme-card ${theme.sentiment}">
+                <div class="name">${theme.theme}</div>
+                <div class="freq">${theme.frequency}x mentioned</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        ` : ''}
+
+        <div class="section">
+          <div class="recommendations-box">
+            <div class="title">🎯 AI Recommendations</div>
+            <ul class="list">
+              ${insights.recommendations.map(item => `<li>${item}</li>`).join('')}
+            </ul>
+          </div>
+        </div>
+
+        <div class="footer">
+          Generated by SOSH Customer Insights • ${new Date().toLocaleString()}
+        </div>
+      </body>
+      </html>
+    `
+
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(reportHTML)
+      printWindow.document.close()
+      printWindow.focus()
+      // Small delay to ensure styles are loaded
+      setTimeout(() => {
+        printWindow.print()
+      }, 250)
+    }
   }
 
   return (
@@ -374,8 +637,8 @@ export default function CustomerInsights() {
                 >
                   📋 Copy Data
                 </button>
-                <button 
-                  onClick={() => window.print()}
+                <button
+                  onClick={printReport}
                   className="btn btn-outline btn-sm"
                 >
                   🖨️ Print Report

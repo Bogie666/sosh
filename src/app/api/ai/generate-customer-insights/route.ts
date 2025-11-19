@@ -21,10 +21,12 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`Generating customer insights for ${reviews.length} reviews`)
+    console.log(`📊 Generating customer insights for ${reviews.length} reviews`)
 
     // Filter reviews based on timeframe and location
     const filteredReviews = filterReviewsByTimeframe(reviews, timeframe, locationId)
+
+    console.log(`📊 Filtered to ${filteredReviews.length} reviews for timeframe: ${timeframe}, location: ${locationId}`)
     
     if (filteredReviews.length === 0) {
       return NextResponse.json({
@@ -68,6 +70,12 @@ function filterReviewsByTimeframe(reviews: any[], timeframe: string, locationId:
   let cutoffDate: Date
 
   switch (timeframe) {
+    case '1week':
+      cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+      break
+    case '2weeks':
+      cutoffDate = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000)
+      break
     case '1month':
       cutoffDate = new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
       break
@@ -88,7 +96,7 @@ function filterReviewsByTimeframe(reviews: any[], timeframe: string, locationId:
     const reviewDate = new Date(review.date)
     const isInTimeframe = reviewDate >= cutoffDate
     const isInLocation = locationId === 'all' || review.locationId === locationId
-    
+
     return isInTimeframe && isInLocation
   })
 }
@@ -136,7 +144,7 @@ async function generateReviewInsights(reviews: any[], timeframe: string) {
   }
 
   // Generate AI insights
-  const prompt = `Analyze these customer reviews for an HVAC, plumbing, and electrical service company:
+  const prompt = `Analyze these customer reviews for an HVAC, plumbing, and electrical service company.
 
 POSITIVE REVIEWS (${reviews.filter(r => r.rating >= 4).length} reviews):
 ${positiveReviews || 'No positive reviews available'}
@@ -144,84 +152,86 @@ ${positiveReviews || 'No positive reviews available'}
 NEGATIVE/NEUTRAL REVIEWS (${reviews.filter(r => r.rating <= 3).length} reviews):
 ${negativeReviews || 'No negative reviews available'}
 
-Please provide a JSON response with:
-1. commonPraise: Array of 5-7 specific things customers consistently praise
-2. commonComplaints: Array of 3-5 specific issues customers mention
-3. keyThemes: Array of themes with sentiment and frequency
-4. recommendations: Array of 5-7 actionable business recommendations
+Analyze the actual review content and provide a JSON response with these exact fields:
 
-Focus on specific, actionable insights rather than generic observations. Be concise and business-focused.
+{
+  "commonPraise": ["specific praise 1", "specific praise 2", ...],
+  "commonComplaints": ["specific issue 1", "specific issue 2", ...],
+  "keyThemes": [
+    {
+      "theme": "Theme Name",
+      "sentiment": "positive" | "negative" | "neutral",
+      "frequency": <number>,
+      "examples": ["example quote 1"]
+    }
+  ],
+  "recommendations": ["actionable recommendation 1", ...]
+}
 
-Return only valid JSON.`
+IMPORTANT INSTRUCTIONS:
+- Extract 5-7 specific things customers ACTUALLY praised in these reviews
+- Extract 3-5 specific issues customers ACTUALLY complained about
+- Identify 4-6 key themes with real example quotes from the reviews
+- Provide 5-7 actionable business recommendations based on these specific reviews
+- Be specific and reference actual content from the reviews
+- Do NOT provide generic placeholder insights
+- Return ONLY valid JSON, no other text`
 
   try {
-    // FIXED: Use the correct method from aiService
-    const result = await aiService.generateSocialContent(
-      prompt,
-      'generic',
-      'general', // Use 'general' as platform since this isn't social media content
-      {
-        contentType: 'analysis',
-        maxTokens: 800
-      }
-    )
+    // Use the new generateCompletion method that actually processes the prompt
+    const result = await aiService.generateCompletion(prompt, {
+      systemPrompt: 'You are a business analytics expert specializing in customer review analysis for service companies. Analyze the provided reviews carefully and extract specific, actionable insights. Always return valid JSON.',
+      maxTokens: 1000,
+      temperature: 0.3, // Lower temperature for more consistent, analytical output
+      responseFormat: 'json'
+    })
 
     let parsedInsights
     if (result.success && result.content) {
+      console.log('✅ AI analysis successful, parsing response...')
+      console.log('📝 Raw AI response:', result.content.substring(0, 200) + '...')
+
       try {
         // Try to parse AI response as JSON
         parsedInsights = JSON.parse(result.content)
-      } catch {
+        console.log('✅ Successfully parsed JSON insights')
+        console.log('📊 Insights summary:', {
+          praiseCount: parsedInsights.commonPraise?.length || 0,
+          complaintsCount: parsedInsights.commonComplaints?.length || 0,
+          themesCount: parsedInsights.keyThemes?.length || 0,
+          recommendationsCount: parsedInsights.recommendations?.length || 0
+        })
+      } catch (parseError) {
         // If JSON parsing fails, create default structure
+        console.error('❌ Failed to parse AI response as JSON:', parseError)
+        console.log('📝 Full AI response:', result.content)
         parsedInsights = {
           commonPraise: [
-            'Professional and knowledgeable technicians',
-            'Timely and reliable service',
-            'Quality workmanship'
+            'Unable to parse AI response - check logs for details'
           ],
           commonComplaints: [
-            'Scheduling challenges',
-            'Communication delays'
+            'JSON parsing failed'
           ],
-          keyThemes: [
-            {
-              theme: 'Service Quality',
-              sentiment: 'positive',
-              frequency: Math.floor(reviews.length * 0.3),
-              examples: ['Great service']
-            }
-          ],
+          keyThemes: [],
           recommendations: [
-            'Continue focus on technician training',
-            'Improve scheduling system',
-            'Enhance customer communication'
+            'Please try generating insights again'
           ]
         }
       }
     } else {
       // AI generation failed, use fallback
+      console.error('❌ AI generation failed:', result.error)
       parsedInsights = {
         commonPraise: [
-          'Professional service delivery',
-          'Knowledgeable technicians',
-          'Timely responses'
+          `AI analysis failed: ${result.error || 'Unknown error'}`
         ],
         commonComplaints: [
-          'Scheduling coordination',
-          'Communication timing'
+          'Unable to generate insights'
         ],
-        keyThemes: [
-          {
-            theme: 'Service Quality',
-            sentiment: 'positive',
-            frequency: Math.floor(reviews.length * 0.3),
-            examples: ['Professional service']
-          }
-        ],
+        keyThemes: [],
         recommendations: [
-          'Enhance technician training programs',
-          'Streamline scheduling processes',
-          'Improve customer communication protocols'
+          'Please check your OpenAI API key and try again',
+          'Ensure you have sufficient API credits'
         ]
       }
     }

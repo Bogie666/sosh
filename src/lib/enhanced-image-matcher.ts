@@ -231,10 +231,10 @@ class EnhancedImageMatcher implements ContentImageMatcher {
       }
     })
     
-    // Penalize overused images to promote variety
+    // Penalize overused images to promote variety (strengthened)
     if (image.usageCount > 5) {
-      score -= Math.min(10, image.usageCount - 5)
-      matchingFactors.push(`Usage penalty: -${Math.min(10, image.usageCount - 5)}`)
+      score -= Math.min(20, (image.usageCount - 5) * 2)
+      matchingFactors.push(`Usage penalty: -${Math.min(20, (image.usageCount - 5) * 2)}`)
     }
     
     // Bonus for high-quality AI descriptions
@@ -304,14 +304,14 @@ class EnhancedImageMatcher implements ContentImageMatcher {
         : 999
       
       if (daysSinceLastUsed < 1) {
-        adjustedScore -= 50 // Heavy penalty for same-day usage
-        adjustmentFactors.push('Same day penalty: -50')
+        adjustedScore -= 100 // Heavy penalty for same-day usage (doubled)
+        adjustmentFactors.push('Same day penalty: -100')
       } else if (daysSinceLastUsed < 3) {
-        adjustedScore -= 30 // Medium penalty for recent usage
-        adjustmentFactors.push('Recent usage penalty: -30')
+        adjustedScore -= 60 // Strong penalty for recent usage (doubled)
+        adjustmentFactors.push('Recent usage penalty: -60')
       } else if (daysSinceLastUsed < 7) {
-        adjustedScore -= 15 // Light penalty for weekly usage
-        adjustmentFactors.push('Weekly usage penalty: -15')
+        adjustedScore -= 40 // Medium penalty for weekly usage (increased)
+        adjustmentFactors.push('Weekly usage penalty: -40')
       }
       
       // Additional penalty for high usage count (overused images)
@@ -321,13 +321,13 @@ class EnhancedImageMatcher implements ContentImageMatcher {
         adjustmentFactors.push(`Overuse penalty: -${usagePenalty}`)
       }
       
-      // Bonus for unused or rarely used images
+      // Bonus for unused or rarely used images (strengthened)
       if (scored.image.usageCount === 0) {
-        adjustedScore += 15
-        adjustmentFactors.push('Fresh image bonus: +15')
+        adjustedScore += 30
+        adjustmentFactors.push('Fresh image bonus: +30')
       } else if (scored.image.usageCount <= 2) {
-        adjustedScore += 8
-        adjustmentFactors.push('Low usage bonus: +8')
+        adjustedScore += 15
+        adjustmentFactors.push('Low usage bonus: +15')
       }
       
       // Day-specific variety bonuses
@@ -351,16 +351,17 @@ class EnhancedImageMatcher implements ContentImageMatcher {
       }
     })
     
-    // Sort by adjusted score with controlled randomization
+    // Sort by adjusted score with STRONG controlled randomization for variety
     return varietyAdjustedImages.sort((a, b) => {
       const scoreDiff = b.relevanceScore - a.relevanceScore
-      
-      // Add controlled randomization only for images with similar scores (within 20 points)
-      if (Math.abs(scoreDiff) < 20 && a.relevanceScore > 30 && b.relevanceScore > 30) {
-        const randomFactor = (Math.random() - 0.5) * 10 // Small random boost for variety
+
+      // Add strong randomization for images with similar scores (widened to 60 points)
+      // This ensures batch selections get different images even with similar scores
+      if (Math.abs(scoreDiff) < 60 && a.relevanceScore > 20 && b.relevanceScore > 20) {
+        const randomFactor = (Math.random() - 0.5) * 40 // Strong random boost (±20 points) for variety
         return scoreDiff + randomFactor
       }
-      
+
       return scoreDiff
     })
   }
@@ -420,7 +421,7 @@ class EnhancedImageMatcher implements ContentImageMatcher {
       imageTags.some(tag => tag.includes(pref))
     ).length
     
-    return matches * 5 // 5 points per day-specific preference match
+    return matches * 15 // 15 points per day-specific preference match (tripled for stronger variety)
   }
 
   /**
@@ -450,39 +451,99 @@ class EnhancedImageMatcher implements ContentImageMatcher {
 // Export for use in the enhanced content generation API
 export const enhancedImageMatcher = new EnhancedImageMatcher()
 
+/**
+ * Simple hash function to create a content-based seed for variety
+ */
+function hashContent(content: string): number {
+  let hash = 0
+  for (let i = 0; i < content.length; i++) {
+    const char = content.charCodeAt(i)
+    hash = ((hash << 5) - hash) + char
+    hash = hash & hash // Convert to 32bit integer
+  }
+  return Math.abs(hash)
+}
+
 // Helper function to integrate with existing settings aggregator
 export function getEnhancedRelevantImages(
   businessSettings: any,
   content: string,
   contentType: string,
   day: string = 'monday',
-  businessContext: any = {}
+  businessContext: any = {},
+  excludeImageIds: string[] = [] // NEW: Exclude already-selected images in batch
 ): ImageRelevanceScore[] {
   if (!businessSettings?.imageLibrary?.length) {
     return []
   }
-  
+
+  // Filter out excluded images (for batch operations)
+  let availableImages = businessSettings.imageLibrary
+  if (excludeImageIds.length > 0) {
+    availableImages = businessSettings.imageLibrary.filter(
+      (img: ImageLibraryItem) => !excludeImageIds.includes(img.id)
+    )
+    console.log(`🚫 Excluded ${excludeImageIds.length} already-selected images, ${availableImages.length} remaining`)
+  }
+
+  if (availableImages.length === 0) {
+    console.log('⚠️ No images available after exclusions')
+    return []
+  }
+
   // Analyze content to understand image requirements
   const requirements = enhancedImageMatcher.analyzeContentForImageNeeds(content, contentType, day)
-  
+
   console.log('🎯 Image Requirements:', {
     primaryKeywords: requirements.primaryKeywords,
     visualStyle: requirements.visualStyle,
     preferredCategory: requirements.preferredCategory
   })
-  
+
   // Score and select best images
   const scoredImages = enhancedImageMatcher.selectBestImages(
-    businessSettings.imageLibrary,
+    availableImages,
     requirements,
     businessContext
   )
-  
+
+  // Apply content-based variety: use content hash to rotate through top candidates
+  const contentHash = hashContent(content + day + contentType)
+  const topCandidateCount = Math.min(6, scoredImages.length) // Consider top 6 candidates
+
+  if (topCandidateCount > 1 && scoredImages.length > 1) {
+    // Check if top candidates have similar scores (within 50 points)
+    const topScore = scoredImages[0].relevanceScore
+    const similarCandidates = scoredImages.filter(
+      img => img.relevanceScore >= topScore - 50
+    ).slice(0, topCandidateCount)
+
+    if (similarCandidates.length > 1) {
+      // Use content hash to select from similar candidates
+      const selectionIndex = contentHash % similarCandidates.length
+
+      // Swap the selected candidate to the front
+      if (selectionIndex > 0) {
+        const selected = similarCandidates[selectionIndex]
+        const originalFirst = scoredImages[0]
+
+        // Find and swap in the main array
+        const selectedIndex = scoredImages.findIndex(img => img.image.id === selected.image.id)
+        if (selectedIndex > 0) {
+          scoredImages[0] = selected
+          scoredImages[selectedIndex] = originalFirst
+
+          console.log(`🎲 Content-hash variety: Selected #${selectionIndex + 1} candidate instead of #1`)
+        }
+      }
+    }
+  }
+
   console.log('📊 Top 3 Image Scores:', scoredImages.slice(0, 3).map(img => ({
     name: img.image.originalName,
     score: img.relevanceScore,
     factors: img.matchingFactors.slice(0, 3)
   })))
-  
+
   return scoredImages
 }

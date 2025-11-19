@@ -610,7 +610,7 @@ Generate a natural reply that sounds like it's from a real person who cares abou
    * Simple sentiment analysis
    */
   analyzeSentiment(review: any): string {
-    const rating = typeof review.rating === 'number' ? review.rating : 
+    const rating = typeof review.rating === 'number' ? review.rating :
                   review.starRating === 'FIVE' ? 5 :
                   review.starRating === 'FOUR' ? 4 :
                   review.starRating === 'THREE' ? 3 :
@@ -619,6 +619,81 @@ Generate a natural reply that sounds like it's from a real person who cares abou
     if (rating >= 4) return 'positive'
     if (rating >= 3) return 'neutral'
     return 'negative'
+  }
+
+  /**
+   * General AI completion - for analysis, JSON generation, and non-social-media tasks
+   * This method actually uses the prompt you pass to it!
+   */
+  async generateCompletion(
+    prompt: string,
+    options: {
+      systemPrompt?: string
+      maxTokens?: number
+      temperature?: number
+      responseFormat?: 'text' | 'json'
+    } = {}
+  ): Promise<{ success: boolean; content?: string; error?: string }> {
+    try {
+      if (!this.isConfigured()) {
+        throw new Error('OpenAI API key not configured')
+      }
+
+      const {
+        systemPrompt = 'You are a helpful AI assistant. Follow instructions precisely and provide accurate, well-structured responses.',
+        maxTokens = 800,
+        temperature = 0.7,
+        responseFormat = 'text'
+      } = options
+
+      const response = await fetch(this.apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          max_tokens: maxTokens,
+          temperature,
+          ...(responseFormat === 'json' && { response_format: { type: 'json_object' } })
+        })
+      })
+
+      if (!response.ok) {
+        const errorData = await response.text()
+        throw new Error(`OpenAI API error: ${response.status} ${errorData}`)
+      }
+
+      const data = await response.json()
+      const content = data.choices[0]?.message?.content?.trim()
+
+      if (!content) {
+        throw new Error('No content returned from OpenAI')
+      }
+
+      return {
+        success: true,
+        content
+      }
+
+    } catch (error) {
+      console.error('AI completion failed:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      }
+    }
   }
 }
 

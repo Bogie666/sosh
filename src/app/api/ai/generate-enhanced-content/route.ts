@@ -521,40 +521,50 @@ Return ONLY the post content, ready to publish immediately.`
 /**
  * Search for relevant images with better error handling
  */
-async function searchRelevantImages(businessId: string, content: string, day: string, platform: string) {
+async function searchRelevantImages(
+  businessId: string,
+  content: string,
+  day: string,
+  platform: string,
+  excludeImageIds: string[] = [] // NEW: Exclude already-selected images in batch
+) {
   try {
     console.log(`🔍 Searching images for: businessId=${businessId}, day=${day}, platform=${platform}`)
-    
+    if (excludeImageIds.length > 0) {
+      console.log(`🚫 Excluding ${excludeImageIds.length} already-selected images for batch variety`)
+    }
+
     // Get business settings which includes image library
     const businessSettings = await settingsAggregator.getBusinessSettings(businessId)
-    
+
     if (!businessSettings.imageLibrary || businessSettings.imageLibrary.length === 0) {
       console.log('📷 No image library found for business')
       return null
     }
-    
+
     console.log(`📚 Image library size: ${businessSettings.imageLibrary.length} images`)
-    
+
     // Import and use the enhanced image matcher properly
     const { getEnhancedRelevantImages: imageMatcherFunction } = await import('@/lib/enhanced-image-matcher')
-    
+
     const imageResults = imageMatcherFunction(
       businessSettings,
       content,
       'weekly-automation', // contentType
       day,
-      { businessId, platform } // businessContext
+      { businessId, platform }, // businessContext
+      excludeImageIds // NEW: Pass excluded image IDs for batch variety
     )
-    
+
     console.log('🎯 Image matching results:', {
       resultType: typeof imageResults,
       isArray: Array.isArray(imageResults),
       length: Array.isArray(imageResults) ? imageResults.length : 0,
       hasResults: !!imageResults
     })
-    
+
     return imageResults
-    
+
   } catch (error) {
     console.error('❌ Enhanced image matching failed:', error)
     return null
@@ -566,23 +576,44 @@ async function searchRelevantImages(businessId: string, content: string, day: st
  */
 function getImageUrl(imageResults: any): string | null {
   if (!imageResults) return null
-  
+
   // Handle array of results
   if (Array.isArray(imageResults) && imageResults.length > 0) {
     const firstResult = imageResults[0]
     return firstResult.image?.cloudUrl || firstResult.selectedImage?.url || null
   }
-  
+
   // Handle single result object
   if (imageResults.selectedImage?.url) {
     return imageResults.selectedImage.url
   }
-  
+
   // Handle direct image object
   if (imageResults.image?.cloudUrl) {
     return imageResults.image.cloudUrl
   }
-  
+
+  return null
+}
+
+function getImageId(imageResults: any): string | null {
+  if (!imageResults) return null
+
+  // Handle array of results
+  if (Array.isArray(imageResults) && imageResults.length > 0) {
+    return imageResults[0].image?.id || null
+  }
+
+  // Handle single result object
+  if (imageResults.selectedImage?.id) {
+    return imageResults.selectedImage.id
+  }
+
+  // Handle direct image object
+  if (imageResults.image?.id) {
+    return imageResults.image.id
+  }
+
   return null
 }
 
@@ -628,6 +659,33 @@ function getImageAlternatives(imageResults: any): any[] {
   return []
 }
 
+// SMART DATE FUNCTIONS
+function getRelevantMonthsForSpecials(relevantMonths?: number[], postDate?: string, fallbackMonth?: number): number[] {
+  if (relevantMonths && relevantMonths.length > 0) {
+    // Use the provided relevant months from smart date logic
+    console.log('📅 Using smart date relevant months:', relevantMonths)
+    return relevantMonths
+  }
+  
+  if (postDate) {
+    // Use the post date's month
+    const month = new Date(postDate).getMonth()
+    console.log('📅 Using post date month:', month)
+    return [month]
+  }
+  
+  // Fallback to provided month or current month
+  const month = fallbackMonth !== undefined ? fallbackMonth : new Date().getMonth()
+  console.log('📅 Using fallback month:', month)
+  return [month]
+}
+
+function getSeasonalContextFromDate(postDate?: string): string {
+  const date = postDate ? new Date(postDate) : new Date()
+  const month = date.getMonth()
+  return getCurrentSeason(month)
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
@@ -640,7 +698,13 @@ export async function POST(request: NextRequest) {
       includeImages = false,
       includeContentBlocks = false,
       day,
-      month = new Date().getMonth() // Default to current month
+      month = new Date().getMonth(), // Default to current month (fallback)
+      // NEW: Smart date parameters
+      postDate,
+      relevantMonths,
+      seasonalContext,
+      // NEW: Batch image exclusion for variety
+      excludeImageIds = []
     } = body
 
     console.log('🔧 Enhanced content generation request:', {
@@ -650,7 +714,12 @@ export async function POST(request: NextRequest) {
       includeSpecials,
       includeImages,
       day,
-      month
+      month,
+      // NEW: Smart date logging
+      postDate,
+      relevantMonths,
+      seasonalContext,
+      hasSmartDates: !!(postDate || relevantMonths)
     })
 
     // Load business settings with better error handling
@@ -688,7 +757,12 @@ export async function POST(request: NextRequest) {
     // Generate platform-specific content
     const platformInfo = getPlatformInfo(platform)
     const dayThemes = DAILY_THEMES
-    const currentSeason = getCurrentSeason(month)
+    
+    // SMART DATE LOGIC: Use smart seasonal context or calculate from post date
+    const smartSeasonalContext = seasonalContext || getSeasonalContextFromDate(postDate)
+    
+    // SMART DATE LOGIC: Get relevant months for specials
+    const monthsToUse = getRelevantMonthsForSpecials(relevantMonths, postDate, month)
     
     // Enhanced prompt building with complete business integration
     let enhancedPrompt = `Create professional social media content for ${businessInfo.displayName}.`
@@ -711,53 +785,70 @@ export async function POST(request: NextRequest) {
     enhancedPrompt += `\n\n📱 CONTENT REQUIREMENTS:`
     enhancedPrompt += `\nPlatform: ${platform}`
     enhancedPrompt += `\nContent theme: ${dayThemes[day as keyof typeof dayThemes]?.theme || day}`
-    enhancedPrompt += `\nSeason: ${currentSeason} content considerations`
+    enhancedPrompt += `\nSeason: ${smartSeasonalContext} content considerations`
+    
+    // SMART DATE CONTEXT: Add post date context if available
+    if (postDate) {
+      const postDateObj = new Date(postDate)
+      enhancedPrompt += `\nPost Date: ${postDateObj.toLocaleDateString('en-US', { 
+        weekday: 'long', 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      })}`
+    }
 
-    // Simplified and more reliable specials loading
+    // ENHANCED SPECIALS LOADING: Use smart months
     let selectedSpecials: string[] = []
     let specialsIncluded = false
     
     if (includeSpecials) {
-      console.log('🎯 Processing monthly specials...')
+      console.log('🎯 Processing monthly specials with smart dates...')
+      console.log('📅 Months to check for specials:', monthsToUse.map(m => new Date(2024, m, 1).toLocaleString('en-US', { month: 'long' })))
       
-      // Try to get current month specials directly from database
       try {
-        const currentYear = new Date().getFullYear()
-        const monthlySpecial = await prisma.monthlySpecial.findFirst({
+        const currentYear = postDate ? new Date(postDate).getFullYear() : new Date().getFullYear()
+        
+        // Get specials for all relevant months
+        const monthlySpecialsRecords = await prisma.monthlySpecial.findMany({
           where: {
             businessId,
             year: currentYear,
-            month: month
+            month: { in: monthsToUse }
           }
         })
         
-        if (monthlySpecial) {
-          console.log('✅ Found monthly special in database:', monthlySpecial)
-          
-          const specialsData = {
-            hvac: monthlySpecial.hvac || [],
-            plumbing: monthlySpecial.plumbing || [],
-            electrical: monthlySpecial.electrical || [],
-            all: monthlySpecial.all || []
+        console.log(`📋 Found ${monthlySpecialsRecords.length} monthly special records for months:`, monthsToUse)
+        
+        if (monthlySpecialsRecords.length > 0) {
+          // Combine specials from all relevant months
+          const allSpecials = {
+            hvac: [] as string[],
+            plumbing: [] as string[],
+            electrical: [] as string[],
+            all: [] as string[]
           }
           
-          selectedSpecials = selectBalancedSpecials(specialsData, businessId, day)
+          monthlySpecialsRecords.forEach(record => {
+            if (record.hvac) allSpecials.hvac.push(...record.hvac)
+            if (record.plumbing) allSpecials.plumbing.push(...record.plumbing)
+            if (record.electrical) allSpecials.electrical.push(...record.electrical)
+            if (record.all) allSpecials.all.push(...record.all)
+          })
+          
+          console.log('🎯 Combined specials from all relevant months:', {
+            hvac: allSpecials.hvac.length,
+            plumbing: allSpecials.plumbing.length,
+            electrical: allSpecials.electrical.length,
+            all: allSpecials.all.length
+          })
+          
+          selectedSpecials = selectBalancedSpecials(allSpecials, businessId, day)
           specialsIncluded = selectedSpecials.length > 0
           
           console.log('🎲 Selected specials after rotation:', selectedSpecials)
         } else {
-          console.log(`⚠️ No monthly special found for ${businessId}, year: ${currentYear}, month: ${month}`)
-          
-          // Fallback - check if any specials exist for this business
-          const anySpecials = await prisma.monthlySpecial.findFirst({
-            where: { businessId }
-          })
-          
-          if (anySpecials) {
-            console.log('📋 Found specials for other months:', anySpecials)
-          } else {
-            console.log('❌ No monthly specials configured for this business at all')
-          }
+          console.log(`⚠️ No monthly specials found for ${businessId}, year: ${currentYear}, months: ${monthsToUse.join(', ')}`)
         }
       } catch (error) {
         console.error('❌ Error loading monthly specials:', error)
@@ -794,7 +885,7 @@ export async function POST(request: NextRequest) {
 - Use EXACT business name: ${businessInfo.displayName}
 - Focus on customer benefits and value
 - Use relevant hashtags (${platform === 'twitter' ? '2-3 max' : '3-5'})
-- Incorporate seasonal relevance when appropriate
+- Incorporate seasonal relevance when appropriate (${smartSeasonalContext})
 - Highlight expertise and reliability
 - Emergency service availability when relevant
 ${selectedSpecials.length > 0 ? '- MUST mention the promotional specials listed above' : ''}
@@ -808,18 +899,19 @@ PLATFORM REQUIREMENTS:
 Create engaging, platform-appropriate content that drives customer engagement and builds trust.`
 
     console.log('📝 Final prompt length:', enhancedPrompt.length)
-    console.log('🎯 Specials included in prompt:', specialsIncluded)
+    console.log('🎯 Smart date enhanced specials included:', specialsIncluded)
+    console.log('📅 Relevant months used for specials:', monthsToUse.map(m => new Date(2024, m, 1).toLocaleString('en-US', { month: 'long' })))
 
     // Generate content with OpenAI
     let generatedContent = await generateContentWithOpenAI(enhancedPrompt, businessId, platform, day)
 
-    // Enhanced image selection with better fallback
+    // Enhanced image selection with better fallback and usage tracking
     let imageResults: any = null
     if (includeImages) {
       try {
         console.log('🖼️ Attempting to find relevant images...')
         
-        imageResults = await searchRelevantImages(businessId, generatedContent, day, platform)
+        imageResults = await searchRelevantImages(businessId, generatedContent, day, platform, excludeImageIds)
         
         console.log('🖼️ Image search results:', {
           hasResults: !!imageResults,
@@ -862,6 +954,30 @@ Create engaging, platform-appropriate content that drives customer engagement an
             }
           }
         }
+        
+        // CRITICAL: Update usage tracking for selected image
+        if (imageResults && Array.isArray(imageResults) && imageResults.length > 0) {
+          const selectedImage = imageResults[0].image
+          if (selectedImage?.id) {
+            try {
+              await prisma.imageLibrary.update({
+                where: { id: selectedImage.id },
+                data: {
+                  usageCount: { increment: 1 },
+                  lastUsed: new Date()
+                }
+              })
+              console.log('✅ Updated image usage tracking:', {
+                imageId: selectedImage.id,
+                fileName: selectedImage.originalName,
+                newUsageCount: selectedImage.usageCount + 1
+              })
+            } catch (updateError) {
+              console.error('⚠️ Failed to update image usage tracking:', updateError)
+              // Don't fail the request if usage tracking fails
+            }
+          }
+        }
       } catch (error) {
         console.error('❌ Image matching failed:', error)
       }
@@ -879,7 +995,12 @@ Create engaging, platform-appropriate content that drives customer engagement an
       day,
       contentType,
       businessId,
-      month,
+      // SMART DATE METADATA
+      month: monthsToUse.length === 1 ? monthsToUse[0] : monthsToUse,
+      postDate,
+      relevantMonths: monthsToUse,
+      seasonalContext: smartSeasonalContext,
+      smartDatesUsed: !!(postDate || relevantMonths),
       generatedAt: new Date().toISOString(),
       specialsRequested: includeSpecials,
       specialsFound: specialsIncluded,
@@ -903,17 +1024,26 @@ Create engaging, platform-appropriate content that drives customer engagement an
         withinLimits,
         suggestedImage: getImageUrl(imageResults),
         suggestedImageUrl: getImageUrl(imageResults),
+        selectedImageId: getImageId(imageResults), // NEW: Return image ID for batch exclusion
         imageDescription: getImageDescription(imageResults),
         imageAlternatives: getImageAlternatives(imageResults),
         templateUsed: contentType,
         monthlySpecials: selectedSpecials,
         specialsIncluded,
-        metadata
+        metadata,
+        // NEW: Smart date metadata in response
+        smartDateMetadata: {
+          postDate,
+          relevantMonths: monthsToUse,
+          seasonalContext: smartSeasonalContext,
+          monthlySpecialsUsed: selectedSpecials.length,
+          monthsCheckedForSpecials: monthsToUse.map(m => new Date(2024, m, 1).toLocaleString('en-US', { month: 'long' }))
+        }
       }
     }
 
     // Enhanced debugging output
-    console.log('✅ Generation completed:', {
+    console.log('✅ Generation completed with smart dates:', {
       contentLength: generatedContent.length,
       specialsIncluded: specialsIncluded,
       specialsCount: selectedSpecials.length,
@@ -921,7 +1051,11 @@ Create engaging, platform-appropriate content that drives customer engagement an
       withinLimits: withinLimits,
       businessName: businessInfo.displayName,
       phoneIncluded: generatedContent.includes(businessInfo.phone),
-      websiteIncluded: generatedContent.includes(businessInfo.website.replace('https://', '').replace('www.', ''))
+      websiteIncluded: generatedContent.includes(businessInfo.website.replace('https://', '').replace('www.', '')),
+      // SMART DATE DEBUG
+      smartPostDate: postDate,
+      relevantMonths: monthsToUse.map(m => new Date(2024, m, 1).toLocaleString('en-US', { month: 'long' })),
+      seasonalContext: smartSeasonalContext
     })
 
     return NextResponse.json(response)
