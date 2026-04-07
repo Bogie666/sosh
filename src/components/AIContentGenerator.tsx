@@ -787,7 +787,23 @@ export default function AIContentGenerator() {
       throw new Error(error.error || 'Content generation failed')
     }
 
-    return (await response.json()).data
+    const result = await response.json()
+
+    // Map the response to the shape the component expects
+    return {
+      content: result.content || '',
+      suggestedImage: result.image?.description || null,
+      suggestedImageUrl: result.image?.url || null,
+      selectedImageId: result.image?.id || null,
+      imageDescription: result.image?.description || null,
+      imageAlternatives: result.image?.alternatives || [],
+      templateUsed: result.metadata?.contentType || null,
+      monthlySpecials: result.metadata?.specialsIncluded || [],
+      specialsIncluded: (result.metadata?.specialsIncluded?.length || 0) > 0,
+      metadata: result.metadata || {},
+      attemptsUsed: 1,
+      regenerated: false
+    }
   }
 
   const getSeasonalContext = (date: Date) => {
@@ -835,11 +851,21 @@ export default function AIContentGenerator() {
     }
 
     const result = await response.json()
-    console.log(`✅ Generated content result:`, result.data)
-    console.log(`📊 Monthly specials included:`, result.data.monthlySpecials)
-    console.log(`🖼️ Image selected:`, result.data.suggestedImageUrl)
-    
-    return result.data
+
+    return {
+      content: result.content || '',
+      suggestedImage: result.image?.description || null,
+      suggestedImageUrl: result.image?.url || null,
+      selectedImageId: result.image?.id || null,
+      imageDescription: result.image?.description || null,
+      imageAlternatives: result.image?.alternatives || [],
+      templateUsed: result.metadata?.contentType || null,
+      monthlySpecials: result.metadata?.specialsIncluded || [],
+      specialsIncluded: (result.metadata?.specialsIncluded?.length || 0) > 0,
+      metadata: result.metadata || {},
+      attemptsUsed: 1,
+      regenerated: false
+    }
   }
 
   // FIXED: Post editing functions
