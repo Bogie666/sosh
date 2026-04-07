@@ -4,21 +4,14 @@
 import { useState, useEffect } from 'react'
 import CollapsibleSection from './CollapsibleSection'
 
-// Business and Platform options
-const BUSINESSES = [
-  { id: 'lex-dallas', name: 'Lex Dallas', color: 'text-blue-400' },
-  { id: 'lex-etx', name: 'Lex ETX', color: 'text-green-400' },
-  { id: 'lyons', name: 'Lyons', color: 'text-purple-400' }
-]
-
+// Platform specs - sourced from platform-specs.ts (duplicated here for client component)
 const PLATFORMS = [
   { id: 'google', name: 'Google Business Profile', icon: '🏢', color: 'text-blue-400', charLimit: 1500, sweet: '200-400' },
   { id: 'facebook', name: 'Facebook', icon: '📘', color: 'text-blue-500', charLimit: 63206, sweet: '200-400' },
   { id: 'instagram', name: 'Instagram', icon: '📷', color: 'text-pink-400', charLimit: 2200, sweet: '100-200' },
-  { id: 'twitter', name: 'X/Twitter', icon: '🐦', color: 'text-sky-400', charLimit: 280, sweet: '240-280' }
+  { id: 'twitter', name: 'X/Twitter', icon: '🐦', color: 'text-sky-400', charLimit: 280, sweet: '240-270' }
 ]
 
-// Generation timeframe options
 const TIMEFRAME_OPTIONS = [
   { id: 'weekly', name: 'Weekly (5 posts)', description: 'Monday through Friday', postCount: 5 },
   { id: 'monthly', name: 'Monthly (20 posts)', description: 'Full month coverage', postCount: 20 },
@@ -26,209 +19,158 @@ const TIMEFRAME_OPTIONS = [
   { id: 'custom', name: 'Custom Range', description: 'Choose your own dates', postCount: 0 }
 ]
 
-// Daily themes for content structure
-const DAILY_THEMES = {
-  monday: { theme: 'Monday Motivation', focus: 'Energetic special highlights', emoji: '💪' },
-  tuesday: { theme: 'Tuesday Tips', focus: 'Educational HVAC/plumbing/electrical tips', emoji: '💡' },
-  wednesday: { theme: 'Wednesday Specials', focus: 'Mid-week featured specials', emoji: '🎯' },
-  thursday: { theme: 'Thursday Maintenance', focus: 'Maintenance reminders', emoji: '🔧' },
-  friday: { theme: 'Friday Prep', focus: 'Weekend prep content', emoji: '🏠' }
+const DAILY_THEMES: Record<string, { theme: string; focus: string; emoji: string }> = {
+  monday: { theme: 'Monday Motivation', focus: 'Start the week strong with energy and special highlights', emoji: '💪' },
+  tuesday: { theme: 'Tuesday Tips', focus: 'Educational tips and advice', emoji: '💡' },
+  wednesday: { theme: 'Wednesday Specials', focus: 'Mid-week promotional offers', emoji: '🎯' },
+  thursday: { theme: 'Thursday Maintenance', focus: 'Maintenance reminders and safety tips', emoji: '🔧' },
+  friday: { theme: 'Friday Prep', focus: 'Weekend preparation and service availability', emoji: '🏠' }
+}
+
+interface BusinessOption {
+  id: string
+  name: string
+  displayName: string
+  brandVoice?: string
+  tagline?: string
 }
 
 interface WeeklyPost {
   id: string
-  business: string
+  businessId: string
+  businessName: string
   day: string
   platform: string
   content: string
   characterCount: number
   withinLimits: boolean
   status: 'generating' | 'completed' | 'error' | 'editing'
+  imageUrl?: string
+  imageDescription?: string
+  suggestedTime?: string
   originalContent?: string
   isEdited?: boolean
 }
 
 export default function EnhancedWeeklyAutomation() {
-  const [selectedBusinesses, setSelectedBusinesses] = useState<string[]>(['lex-dallas'])
+  // Dynamic business loading
+  const [businesses, setBusinesses] = useState<BusinessOption[]>([])
+  const [loadingBusinesses, setLoadingBusinesses] = useState(true)
+
+  const [selectedBusinesses, setSelectedBusinesses] = useState<string[]>([])
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['facebook'])
   const [selectedTimeframe, setSelectedTimeframe] = useState('weekly')
   const [customStartDate, setCustomStartDate] = useState('')
   const [customEndDate, setCustomEndDate] = useState('')
   const [customPostCount, setCustomPostCount] = useState(10)
-  
-  // Enhanced generation state
+
+  // Generation options
+  const [includeSpecials, setIncludeSpecials] = useState(true)
+  const [includeImages, setIncludeImages] = useState(true)
+  const [includeContentBlocks, setIncludeContentBlocks] = useState(true)
+  const [generatePerPlatform, setGeneratePerPlatform] = useState(true)
+
+  // Generation state
   const [weeklyPosts, setWeeklyPosts] = useState<WeeklyPost[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [generationProgress, setGenerationProgress] = useState({ current: 0, total: 0 })
   const [editingPost, setEditingPost] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
-  
-  // Platform-specific content generation
-  const [generatePerPlatform, setGeneratePerPlatform] = useState(true)
   const [showPreview, setShowPreview] = useState(false)
 
-  const getPostCount = () => {
-    if (selectedTimeframe === 'custom') {
-      return customPostCount
+  // Load businesses from database on mount
+  useEffect(() => {
+    async function loadBusinesses() {
+      try {
+        const response = await fetch('/api/businesses')
+        const data = await response.json()
+        if (data.success && data.businesses) {
+          setBusinesses(data.businesses.map((b: any) => ({
+            id: b.id,
+            name: b.name,
+            displayName: b.displayName,
+            brandVoice: b.brandVoice,
+            tagline: b.tagline
+          })))
+          // Auto-select first business
+          if (data.businesses.length > 0) {
+            setSelectedBusinesses([data.businesses[0].id])
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load businesses:', error)
+      } finally {
+        setLoadingBusinesses(false)
+      }
     }
-    const timeframe = TIMEFRAME_OPTIONS.find(t => t.id === selectedTimeframe)
-    return timeframe?.postCount || 5
+    loadBusinesses()
+  }, [])
+
+  const getPostCount = () => {
+    if (selectedTimeframe === 'custom') return customPostCount
+    return TIMEFRAME_OPTIONS.find(t => t.id === selectedTimeframe)?.postCount || 5
   }
 
   const getTotalGenerations = () => {
     const postCount = getPostCount()
-    const businesses = selectedBusinesses.length
-    const platforms = generatePerPlatform ? selectedPlatforms.length : 1
-    return postCount * businesses * platforms
+    const platformCount = generatePerPlatform ? selectedPlatforms.length : 1
+    return postCount * selectedBusinesses.length * platformCount
   }
 
   const handleBusinessChange = (businessId: string) => {
-    setSelectedBusinesses(prev => 
-      prev.includes(businessId) 
-        ? prev.filter(id => id !== businessId)
-        : [...prev, businessId]
+    setSelectedBusinesses(prev =>
+      prev.includes(businessId) ? prev.filter(id => id !== businessId) : [...prev, businessId]
     )
   }
 
   const handlePlatformChange = (platformId: string) => {
-    setSelectedPlatforms(prev => 
-      prev.includes(platformId) 
-        ? prev.filter(id => id !== platformId)
-        : [...prev, platformId]
+    setSelectedPlatforms(prev =>
+      prev.includes(platformId) ? prev.filter(id => id !== platformId) : [...prev, platformId]
     )
   }
 
-  const generatePlatformSpecificPrompt = (basePrompt: string, platform: string, business: string) => {
-    const platformInfo = PLATFORMS.find(p => p.id === platform)
-    if (!platformInfo) return basePrompt
-
-    const platformPrompts = {
-      twitter: `${basePrompt}
-
-TWITTER/X SPECIFIC REQUIREMENTS:
-- MUST be under 280 characters total
-- Use punchy, action-oriented language
-- Include 2-3 relevant hashtags maximum
-- Create urgency or curiosity
-- End with clear call-to-action
-- Use line breaks sparingly
-- Make every word count
-
-Style: Energetic, direct, hashtag-friendly
-
-CRITICAL: Return ONLY the tweet text. Do NOT include:
-- Character counts
-- "Tweet:" labels
-- Meta descriptions
-- Any formatting notes`,
-
-      facebook: `${basePrompt}
-
-FACEBOOK SPECIFIC REQUIREMENTS:
-- Keep under 400 characters for best engagement
-- Use conversational, community-focused tone
-- Tell a brief story or share experience
-- Include 1-2 relevant hashtags
-- Encourage comments and engagement
-- Use emojis moderately
-
-Style: Conversational, community-building, relatable
-
-CRITICAL: Return ONLY the Facebook post text. Do NOT include:
-- Character counts
-- "Facebook:" labels
-- Meta descriptions
-- Formatting notes
-- Any parenthetical information`,
-
-      instagram: `${basePrompt}
-
-INSTAGRAM SPECIFIC REQUIREMENTS:
-- Keep under 200 characters for optimal engagement
-- Use 3-5 relevant emojis throughout
-- Include 3-5 hashtags
-- Tell a visual story in text
-- Create Instagram-worthy moments
-
-Style: Visual storytelling, emoji-rich, inspiring
-
-CRITICAL: Return ONLY the Instagram caption text. Do NOT include:
-- "Caption:" labels
-- Image descriptions
-- Character counts
-- Meta information
-- Any descriptive text about images`,
-
-      google: `${basePrompt}
-
-GOOGLE BUSINESS PROFILE REQUIREMENTS:
-- Professional, informative tone
-- Include local SEO keywords naturally
-- Mention service area when relevant
-- Focus on expertise and reliability
-- Keep under 400 characters
-- Include clear value proposition
-- Use minimal emojis
-
-Style: Professional, trustworthy, SEO-optimized
-
-CRITICAL: Return ONLY the Google Business post text. Do NOT include:
-- Character counts
-- "Google Business Profile:" labels
-- Meta descriptions
-- Any formatting notes
-- Parenthetical information`
-    }
-
-    return platformPrompts[platform as keyof typeof platformPrompts] || basePrompt
-  }
-
   const generateContentForTimeframe = async () => {
-    if (selectedBusinesses.length === 0) {
-      alert('Please select at least one business')
-      return
-    }
-
-    if (selectedPlatforms.length === 0) {
-      alert('Please select at least one platform')
+    if (selectedBusinesses.length === 0 || selectedPlatforms.length === 0) {
+      alert('Please select at least one business and one platform')
       return
     }
 
     setIsGenerating(true)
     const totalGenerations = getTotalGenerations()
     setGenerationProgress({ current: 0, total: totalGenerations })
-    
+
     const newPosts: WeeklyPost[] = []
     let progressCount = 0
-
     const postCount = getPostCount()
-    const daysToGenerate = selectedTimeframe === 'weekly' 
+
+    const days = selectedTimeframe === 'weekly'
       ? ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']
-      : Array.from({ length: postCount }, (_, i) => `day${i + 1}`)
+      : Array.from({ length: postCount }, (_, i) => {
+          const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+          return dayNames[(i % 7)]
+        })
 
-    // Generate for each business
+    // Track used image IDs per business for batch variety
+    const usedImageIds: Record<string, string[]> = {}
+
     for (const businessId of selectedBusinesses) {
-      const businessName = businessId.replace('-', '')
-      
-      // Generate for each day/post
-      for (let i = 0; i < daysToGenerate.length; i++) {
-        const day = daysToGenerate[i]
-        const dailyTheme = selectedTimeframe === 'weekly' 
-          ? DAILY_THEMES[day as keyof typeof DAILY_THEMES]
-          : { theme: `Post ${i + 1}`, focus: 'Engaging content', emoji: '📍' }
+      const business = businesses.find(b => b.id === businessId)
+      if (!business) continue
+      usedImageIds[businessId] = []
 
-        // Generate for each platform (if platform-specific is enabled)
+      for (let i = 0; i < days.length; i++) {
+        const day = days[i]
         const platformsToGenerate = generatePerPlatform ? selectedPlatforms : [selectedPlatforms[0]]
-        
+
         for (const platform of platformsToGenerate) {
-          const postId = `${businessId}-${day}-${platform}`
-          
-          // Initialize post
+          const postId = `${businessId}-${day}-${i}-${platform}`
+
           const newPost: WeeklyPost = {
             id: postId,
-            business: businessName,
-            day: day,
-            platform: platform,
+            businessId,
+            businessName: business.displayName,
+            day,
+            platform,
             content: '',
             characterCount: 0,
             withinLimits: true,
@@ -236,71 +178,73 @@ CRITICAL: Return ONLY the Google Business post text. Do NOT include:
           }
           newPosts.push(newPost)
 
-          // Generate content
           try {
-            const basePrompt = `Create a ${dailyTheme.theme} social media post.
+            // Calculate post date from start date or today
+            const startDate = customStartDate ? new Date(customStartDate) : getNextMonday()
+            const postDate = new Date(startDate)
+            postDate.setDate(postDate.getDate() + i)
 
-DAILY FOCUS: ${dailyTheme.focus}
-
-REQUIREMENTS:
-- Match the ${dailyTheme.theme} energy and tone
-- ${dailyTheme.focus}
-- Use engaging, action-oriented language
-- Include relevant emojis
-- End with a clear call-to-action
-- Make it feel authentic and engaging, not salesy`
-
-            const platformPrompt = generatePlatformSpecificPrompt(basePrompt, platform, businessName)
-            
-            const response = await fetch('/api/ai/generate-content', {
+            const response = await fetch('/api/ai/generate-enhanced-content', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                prompt: platformPrompt,
-                businessName: businessName,
-                platform: platform,
-                contentType: 'weekly-automation'
+                businessId,
+                platform,
+                day,
+                month: postDate.getMonth(),
+                postDate: postDate.toISOString(),
+                includeSpecials,
+                includeImages,
+                includeContentBlocks,
+                contentType: 'weekly-automation',
+                excludeImageIds: usedImageIds[businessId]
               })
             })
 
             const data = await response.json()
-            
+
             if (data.success) {
-              // Clean the generated content to remove metadata
-              const cleanedContent = cleanGeneratedContent(data.content, platform)
               const platformInfo = PLATFORMS.find(p => p.id === platform)
-              const withinLimits = cleanedContent.length <= (platformInfo?.charLimit || 1000)
-              
-              const index = newPosts.findIndex(p => p.id === postId)
-              if (index !== -1) {
-                newPosts[index] = {
+              const withinLimits = (data.content?.length || 0) <= (platformInfo?.charLimit || 1000)
+
+              // Track used image for batch variety
+              if (data.image?.id) {
+                usedImageIds[businessId].push(data.image.id)
+              }
+
+              const idx = newPosts.findIndex(p => p.id === postId)
+              if (idx !== -1) {
+                newPosts[idx] = {
                   ...newPost,
-                  content: cleanedContent,
-                  characterCount: cleanedContent.length,
+                  content: data.content || '',
+                  characterCount: data.content?.length || 0,
                   withinLimits,
-                  status: 'completed'
+                  status: 'completed',
+                  imageUrl: data.image?.url || undefined,
+                  imageDescription: data.image?.description || undefined,
+                  suggestedTime: data.metadata?.suggestedPostingTime?.label || undefined
                 }
               }
             } else {
-              const index = newPosts.findIndex(p => p.id === postId)
-              if (index !== -1) {
-                newPosts[index] = { ...newPost, status: 'error' }
+              const idx = newPosts.findIndex(p => p.id === postId)
+              if (idx !== -1) {
+                newPosts[idx] = { ...newPost, status: 'error' }
               }
             }
           } catch (error) {
             console.error('Error generating post:', error)
-            const index = newPosts.findIndex(p => p.id === postId)
-            if (index !== -1) {
-              newPosts[index] = { ...newPost, status: 'error' }
+            const idx = newPosts.findIndex(p => p.id === postId)
+            if (idx !== -1) {
+              newPosts[idx] = { ...newPost, status: 'error' }
             }
           }
 
           progressCount++
           setGenerationProgress({ current: progressCount, total: totalGenerations })
           setWeeklyPosts([...newPosts])
-          
-          // Small delay to prevent rate limiting
-          await new Promise(resolve => setTimeout(resolve, 1000))
+
+          // Rate limiting delay
+          await new Promise(resolve => setTimeout(resolve, 1200))
         }
       }
     }
@@ -314,10 +258,10 @@ REQUIREMENTS:
   }
 
   const saveEdit = (postId: string) => {
-    setWeeklyPosts(prev => prev.map(post => 
-      post.id === postId 
-        ? { 
-            ...post, 
+    setWeeklyPosts(prev => prev.map(post =>
+      post.id === postId
+        ? {
+            ...post,
             content: editContent,
             characterCount: editContent.length,
             withinLimits: editContent.length <= (PLATFORMS.find(p => p.id === post.platform)?.charLimit || 1000),
@@ -336,135 +280,66 @@ REQUIREMENTS:
   }
 
   const regeneratePost = async (post: WeeklyPost) => {
-    setWeeklyPosts(prev => prev.map(p => 
+    setWeeklyPosts(prev => prev.map(p =>
       p.id === post.id ? { ...p, status: 'generating' } : p
     ))
 
     try {
-      const dailyTheme = selectedTimeframe === 'weekly' 
-        ? DAILY_THEMES[post.day as keyof typeof DAILY_THEMES]
-        : { theme: `Post`, focus: 'Engaging content', emoji: '📍' }
-
-      const basePrompt = `Create a ${dailyTheme.theme} social media post.
-
-DAILY FOCUS: ${dailyTheme.focus}
-
-REQUIREMENTS:
-- Match the ${dailyTheme.theme} energy and tone
-- ${dailyTheme.focus}
-- Use engaging, action-oriented language
-- Include relevant emojis
-- End with a clear call-to-action
-- Make it feel authentic and engaging, not salesy`
-
-      const platformPrompt = generatePlatformSpecificPrompt(basePrompt, post.platform, post.business)
-      
-      const response = await fetch('/api/ai/generate-content', {
+      const response = await fetch('/api/ai/generate-enhanced-content', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: platformPrompt,
-          businessName: post.business,
+          businessId: post.businessId,
           platform: post.platform,
+          day: post.day,
+          month: new Date().getMonth(),
+          includeSpecials,
+          includeImages,
+          includeContentBlocks,
           contentType: 'regeneration'
         })
       })
 
       const data = await response.json()
-      
+
       if (data.success) {
-        // Clean the generated content to remove metadata
-        const cleanedContent = cleanGeneratedContent(data.content, post.platform)
         const platformInfo = PLATFORMS.find(p => p.id === post.platform)
-        const withinLimits = cleanedContent.length <= (platformInfo?.charLimit || 1000)
-        
-        setWeeklyPosts(prev => prev.map(p => 
-          p.id === post.id 
+        setWeeklyPosts(prev => prev.map(p =>
+          p.id === post.id
             ? {
                 ...p,
-                content: cleanedContent,
-                characterCount: cleanedContent.length,
-                withinLimits,
+                content: data.content || '',
+                characterCount: data.content?.length || 0,
+                withinLimits: (data.content?.length || 0) <= (platformInfo?.charLimit || 1000),
                 status: 'completed',
+                imageUrl: data.image?.url || p.imageUrl,
+                imageDescription: data.image?.description || p.imageDescription,
+                suggestedTime: data.metadata?.suggestedPostingTime?.label || p.suggestedTime,
                 originalContent: p.originalContent || p.content
               }
             : p
         ))
       } else {
-        setWeeklyPosts(prev => prev.map(p => 
+        setWeeklyPosts(prev => prev.map(p =>
           p.id === post.id ? { ...p, status: 'error' } : p
         ))
       }
-    } catch (error) {
-      console.error('Error regenerating post:', error)
-      setWeeklyPosts(prev => prev.map(p => 
+    } catch {
+      setWeeklyPosts(prev => prev.map(p =>
         p.id === post.id ? { ...p, status: 'error' } : p
       ))
     }
   }
 
-  const cleanGeneratedContent = (content: string, platform: string) => {
-    let cleaned = content.trim()
-    
-    // Remove common unwanted prefixes and suffixes
-    const unwantedPrefixes = [
-      /^(Facebook|Instagram|Twitter|Google Business Profile?):\s*/i,
-      /^Caption:\s*/i,
-      /^Tweet:\s*/i,
-      /^Post:\s*/i
-    ]
-    
-    const unwantedSuffixes = [
-      /\s*\(Characters?:\s*\d+\)$/i,
-      /\s*Character Count:\s*\d+$/i,
-      /\s*Image Description:.*$/i,
-      /\s*\(.*characters?\)$/i
-    ]
-    
-    // Remove unwanted prefixes
-    unwantedPrefixes.forEach(pattern => {
-      cleaned = cleaned.replace(pattern, '')
-    })
-    
-    // Remove unwanted suffixes
-    unwantedSuffixes.forEach(pattern => {
-      cleaned = cleaned.replace(pattern, '')
-    })
-    
-    // Remove any text after "Image Description:" or similar
-    const imageDescPattern = /Image Description:.*$/i
-    cleaned = cleaned.replace(imageDescPattern, '')
-    
-    // Remove any trailing metadata in parentheses with numbers
-    cleaned = cleaned.replace(/\s*\([^)]*\d+[^)]*\)$/g, '')
-    
-    // Clean up extra whitespace
-    cleaned = cleaned.replace(/\s+/g, ' ').trim()
-    
-    // Remove quotes if the entire content is wrapped in quotes
-    if ((cleaned.startsWith('"') && cleaned.endsWith('"')) || 
-        (cleaned.startsWith("'") && cleaned.endsWith("'"))) {
-      cleaned = cleaned.slice(1, -1).trim()
-    }
-    
-    return cleaned
-  }
-
-  const getPlatformIcon = (platformId: string) => {
-    return PLATFORMS.find(p => p.id === platformId)?.icon || '📱'
-  }
-
-  const getPlatformColor = (platformId: string) => {
-    return PLATFORMS.find(p => p.id === platformId)?.color || 'text-gray-400'
-  }
+  const getPlatformIcon = (platformId: string) => PLATFORMS.find(p => p.id === platformId)?.icon || '📱'
+  const getPlatformColor = (platformId: string) => PLATFORMS.find(p => p.id === platformId)?.color || 'text-gray-400'
 
   const getCharacterLimitColor = (post: WeeklyPost) => {
     const platform = PLATFORMS.find(p => p.id === post.platform)
     if (!platform) return 'text-gray-400'
-    
-    const percentage = (post.characterCount / platform.charLimit) * 100
-    if (percentage > 90) return 'text-red-400'
-    if (percentage > 75) return 'text-yellow-400'
+    const pct = (post.characterCount / platform.charLimit) * 100
+    if (pct > 90) return 'text-red-400'
+    if (pct > 75) return 'text-yellow-400'
     return 'text-green-400'
   }
 
@@ -472,22 +347,20 @@ REQUIREMENTS:
     <div key={post.id} className="bg-slate-800/50 rounded-lg p-4 border border-slate-600">
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-center gap-3">
-          <span className="capitalize font-medium text-dark-text">
-            {post.day}
-          </span>
+          <span className="capitalize font-medium text-dark-text">{post.day}</span>
           <span className={`flex items-center gap-1 ${getPlatformColor(post.platform)}`}>
             {getPlatformIcon(post.platform)}
-            <span className="text-sm">
-              {PLATFORMS.find(p => p.id === post.platform)?.name}
-            </span>
+            <span className="text-sm">{PLATFORMS.find(p => p.id === post.platform)?.name}</span>
           </span>
-          {post.isEdited && (
-            <span className="text-xs bg-yellow-600 text-white px-2 py-1 rounded">
-              Edited
+          {post.suggestedTime && (
+            <span className="text-xs text-dark-text-muted bg-slate-700/50 px-2 py-1 rounded">
+              Best time: {post.suggestedTime}
             </span>
           )}
+          {post.isEdited && (
+            <span className="text-xs bg-yellow-600 text-white px-2 py-1 rounded">Edited</span>
+          )}
         </div>
-        
         <div className="flex items-center gap-2">
           <span className={`text-xs ${getCharacterLimitColor(post)}`}>
             {post.characterCount}/{PLATFORMS.find(p => p.id === post.platform)?.charLimit} chars
@@ -495,13 +368,19 @@ REQUIREMENTS:
           <div className={`w-2 h-2 rounded-full ${
             post.status === 'completed' ? 'bg-green-400' :
             post.status === 'generating' ? 'bg-blue-400 animate-pulse' :
-            post.status === 'error' ? 'bg-red-400' :
-            'bg-gray-400'
+            post.status === 'error' ? 'bg-red-400' : 'bg-gray-400'
           }`}></div>
         </div>
       </div>
 
-      {/* Content Display/Editing */}
+      {/* Image preview */}
+      {post.imageUrl && post.status === 'completed' && (
+        <div className="mb-3 flex items-center gap-3 bg-slate-900/50 rounded p-2">
+          <img src={post.imageUrl} alt={post.imageDescription || 'Post image'} className="w-16 h-16 object-cover rounded" />
+          <span className="text-xs text-dark-text-muted">{post.imageDescription || 'Selected image'}</span>
+        </div>
+      )}
+
       {editingPost === post.id ? (
         <div className="space-y-3">
           <textarea
@@ -511,18 +390,8 @@ REQUIREMENTS:
             rows={4}
           />
           <div className="flex gap-2">
-            <button
-              onClick={() => saveEdit(post.id)}
-              className="btn btn-primary btn-sm"
-            >
-              💾 Save
-            </button>
-            <button
-              onClick={cancelEdit}
-              className="btn btn-outline btn-sm"
-            >
-              ✖️ Cancel
-            </button>
+            <button onClick={() => saveEdit(post.id)} className="btn btn-primary btn-sm">Save</button>
+            <button onClick={cancelEdit} className="btn btn-outline btn-sm">Cancel</button>
           </div>
         </div>
       ) : (
@@ -530,37 +399,15 @@ REQUIREMENTS:
           <div className="bg-gray-900/50 rounded p-3 mb-3 text-sm text-dark-text whitespace-pre-wrap">
             {post.content || 'Generating...'}
           </div>
-          
           {post.status === 'completed' && (
             <div className="flex gap-2">
-              <button
-                onClick={() => startEditing(post)}
-                className="btn btn-outline btn-sm"
-              >
-                ✏️ Edit
-              </button>
-              <button
-                onClick={() => regeneratePost(post)}
-                className="btn btn-outline btn-sm"
-              >
-                🔄 Regenerate
-              </button>
-              <button
-                onClick={() => navigator.clipboard.writeText(post.content)}
-                className="btn btn-outline btn-sm"
-              >
-                📋 Copy
-              </button>
+              <button onClick={() => startEditing(post)} className="btn btn-outline btn-sm">Edit</button>
+              <button onClick={() => regeneratePost(post)} className="btn btn-outline btn-sm">Regenerate</button>
+              <button onClick={() => navigator.clipboard.writeText(post.content)} className="btn btn-outline btn-sm">Copy</button>
             </div>
           )}
-          
           {post.status === 'error' && (
-            <button
-              onClick={() => regeneratePost(post)}
-              className="btn btn-outline btn-sm text-red-400"
-            >
-              🔄 Retry Generation
-            </button>
+            <button onClick={() => regeneratePost(post)} className="btn btn-outline btn-sm text-red-400">Retry</button>
           )}
         </>
       )}
@@ -568,13 +415,12 @@ REQUIREMENTS:
   )
 
   return (
-    <CollapsibleSection title="🚀 Enhanced Content Automation" defaultExpanded={false}>
+    <CollapsibleSection title="Content Automation" defaultExpanded={false}>
       <div className="space-y-8">
-        
+
         {/* Timeframe Selection */}
         <div className="bg-slate-800/30 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-dark-text mb-4">📅 Generation Timeframe</h3>
-          
+          <h3 className="text-lg font-semibold text-dark-text mb-4">Generation Timeframe</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             {TIMEFRAME_OPTIONS.map(option => (
               <button
@@ -588,74 +434,61 @@ REQUIREMENTS:
               >
                 <div className="font-semibold text-dark-text">{option.name}</div>
                 <div className="text-sm text-dark-text-muted">{option.description}</div>
-                {option.postCount > 0 && (
-                  <div className="text-xs text-accent-blue mt-1">{option.postCount} posts</div>
-                )}
               </button>
             ))}
           </div>
 
-          {/* Custom Date Range */}
           {selectedTimeframe === 'custom' && (
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 p-4 bg-slate-700/30 rounded-lg">
               <div>
                 <label className="block text-dark-text-muted text-sm mb-1">Start Date</label>
-                <input
-                  type="date"
-                  value={customStartDate}
-                  onChange={(e) => setCustomStartDate(e.target.value)}
-                  className="form-control"
-                />
+                <input type="date" value={customStartDate} onChange={(e) => setCustomStartDate(e.target.value)} className="form-control" />
               </div>
               <div>
                 <label className="block text-dark-text-muted text-sm mb-1">End Date</label>
-                <input
-                  type="date"
-                  value={customEndDate}
-                  onChange={(e) => setCustomEndDate(e.target.value)}
-                  className="form-control"
-                />
+                <input type="date" value={customEndDate} onChange={(e) => setCustomEndDate(e.target.value)} className="form-control" />
               </div>
               <div>
                 <label className="block text-dark-text-muted text-sm mb-1">Number of Posts</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={customPostCount}
-                  onChange={(e) => setCustomPostCount(parseInt(e.target.value) || 1)}
-                  className="form-control"
-                />
+                <input type="number" min="1" max="100" value={customPostCount} onChange={(e) => setCustomPostCount(parseInt(e.target.value) || 1)} className="form-control" />
               </div>
             </div>
           )}
         </div>
 
-        {/* Business Selection */}
+        {/* Business Selection - Dynamic from Database */}
         <div className="bg-slate-800/30 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-dark-text mb-4">🏢 Select Businesses</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {BUSINESSES.map(business => (
-              <label key={business.id} className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg cursor-pointer hover:bg-slate-700/70 transition-colors">
-                <input
-                  type="checkbox"
-                  checked={selectedBusinesses.includes(business.id)}
-                  onChange={() => handleBusinessChange(business.id)}
-                  className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded focus:ring-accent-blue"
-                />
-                <span className={`font-medium ${business.color}`}>
-                  {business.name}
-                </span>
-              </label>
-            ))}
-          </div>
+          <h3 className="text-lg font-semibold text-dark-text mb-4">Select Businesses</h3>
+          {loadingBusinesses ? (
+            <div className="text-dark-text-muted">Loading businesses...</div>
+          ) : businesses.length === 0 ? (
+            <div className="text-dark-text-muted">No businesses found. Add businesses in Settings.</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {businesses.map(business => (
+                <label key={business.id} className="flex items-start gap-3 p-3 bg-slate-700/50 rounded-lg cursor-pointer hover:bg-slate-700/70 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={selectedBusinesses.includes(business.id)}
+                    onChange={() => handleBusinessChange(business.id)}
+                    className="w-4 h-4 mt-1 text-accent-blue bg-gray-800 border-gray-600 rounded focus:ring-accent-blue"
+                  />
+                  <div>
+                    <span className="font-medium text-dark-text">{business.displayName}</span>
+                    {business.tagline && (
+                      <div className="text-xs text-dark-text-muted mt-0.5">{business.tagline}</div>
+                    )}
+                  </div>
+                </label>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Platform Selection with Character Limits */}
+        {/* Platform Selection */}
         <div className="bg-slate-800/30 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-dark-text mb-4">📱 Select Platforms</h3>
-          
-          {/* Platform-Specific Generation Toggle */}
+          <h3 className="text-lg font-semibold text-dark-text mb-4">Select Platforms</h3>
+
           <div className="mb-4 p-4 bg-slate-700/30 rounded-lg">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -665,12 +498,9 @@ REQUIREMENTS:
                 className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded focus:ring-accent-blue"
               />
               <div>
-                <span className="font-medium text-dark-text">Generate Platform-Specific Content</span>
+                <span className="font-medium text-dark-text">Platform-Specific Content</span>
                 <div className="text-sm text-dark-text-muted">
-                  {generatePerPlatform 
-                    ? 'Create unique content optimized for each platform'
-                    : 'Generate one post and adapt for all platforms'
-                  }
+                  {generatePerPlatform ? 'Unique content optimized for each platform' : 'One post adapted for all platforms'}
                 </div>
               </div>
             </label>
@@ -687,21 +517,48 @@ REQUIREMENTS:
                 />
                 <span className="text-lg">{platform.icon}</span>
                 <div className="flex-1">
-                  <span className={`text-sm font-medium ${platform.color}`}>
-                    {platform.name}
-                  </span>
-                  <div className="text-xs text-dark-text-muted">
-                    Limit: {platform.charLimit} chars • Sweet spot: {platform.sweet}
-                  </div>
+                  <span className={`text-sm font-medium ${platform.color}`}>{platform.name}</span>
+                  <div className="text-xs text-dark-text-muted">Limit: {platform.charLimit} chars | Best: {platform.sweet}</div>
                 </div>
               </label>
             ))}
           </div>
         </div>
 
+        {/* Content Options */}
+        <div className="bg-slate-800/30 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-dark-text mb-4">Content Options</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg cursor-pointer">
+              <input type="checkbox" checked={includeSpecials} onChange={(e) => setIncludeSpecials(e.target.checked)}
+                className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded" />
+              <div>
+                <span className="font-medium text-dark-text text-sm">Include Monthly Specials</span>
+                <div className="text-xs text-dark-text-muted">Weave current promotions into posts</div>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg cursor-pointer">
+              <input type="checkbox" checked={includeImages} onChange={(e) => setIncludeImages(e.target.checked)}
+                className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded" />
+              <div>
+                <span className="font-medium text-dark-text text-sm">Auto-Select Images</span>
+                <div className="text-xs text-dark-text-muted">Match images from library to each post</div>
+              </div>
+            </label>
+            <label className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg cursor-pointer">
+              <input type="checkbox" checked={includeContentBlocks} onChange={(e) => setIncludeContentBlocks(e.target.checked)}
+                className="w-4 h-4 text-accent-blue bg-gray-800 border-gray-600 rounded" />
+              <div>
+                <span className="font-medium text-dark-text text-sm">Use Content Blocks</span>
+                <div className="text-xs text-dark-text-muted">Include saved CTAs, phone, hours</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         {/* Generation Summary */}
         <div className="bg-blue-900/20 border border-blue-700/30 rounded-lg p-4">
-          <h4 className="text-blue-400 font-medium mb-2">📊 Generation Summary</h4>
+          <h4 className="text-blue-400 font-medium mb-2">Generation Summary</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
             <div>
               <span className="text-dark-text-muted">Posts per Business:</span>
@@ -729,9 +586,9 @@ REQUIREMENTS:
             disabled={isGenerating || selectedBusinesses.length === 0 || selectedPlatforms.length === 0}
             className="btn btn-success btn-lg"
           >
-            {isGenerating 
-              ? `🤖 Generating... (${generationProgress.current}/${generationProgress.total})` 
-              : `🚀 Generate ${getTotalGenerations()} Posts`
+            {isGenerating
+              ? `Generating... (${generationProgress.current}/${generationProgress.total})`
+              : `Generate ${getTotalGenerations()} Posts`
             }
           </button>
         </div>
@@ -744,7 +601,7 @@ REQUIREMENTS:
               <span>{generationProgress.current}/{generationProgress.total}</span>
             </div>
             <div className="w-full bg-slate-700 rounded-full h-2">
-              <div 
+              <div
                 className="bg-accent-blue h-2 rounded-full transition-all duration-300"
                 style={{ width: `${(generationProgress.current / generationProgress.total) * 100}%` }}
               ></div>
@@ -752,53 +609,42 @@ REQUIREMENTS:
           </div>
         )}
 
-        {/* Generated Content Display */}
+        {/* Generated Content */}
         {weeklyPosts.length > 0 && (
           <div className="bg-slate-800/30 rounded-lg p-6">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-dark-text">📋 Generated Content</h3>
+              <h3 className="text-lg font-semibold text-dark-text">Generated Content</h3>
               <div className="flex gap-2">
-                <button
-                  onClick={() => setShowPreview(!showPreview)}
-                  className="btn btn-outline btn-sm"
-                >
-                  {showPreview ? '📝 Edit View' : '👁️ Preview Mode'}
+                <button onClick={() => setShowPreview(!showPreview)} className="btn btn-outline btn-sm">
+                  {showPreview ? 'Edit View' : 'Preview Mode'}
                 </button>
-                <button
-                  onClick={() => setWeeklyPosts([])}
-                  className="btn btn-outline btn-sm text-red-400"
-                >
-                  🗑️ Clear All
+                <button onClick={() => setWeeklyPosts([])} className="btn btn-outline btn-sm text-red-400">
+                  Clear All
                 </button>
               </div>
             </div>
-            
+
             <div className="space-y-6">
               {selectedBusinesses.map(businessId => {
-                const businessName = businessId.replace('-', '')
-                const businessPosts = weeklyPosts.filter(p => p.business === businessName)
-                const hasMoreThanThree = businessPosts.length > 3
+                const business = businesses.find(b => b.id === businessId)
+                const businessPosts = weeklyPosts.filter(p => p.businessId === businessId)
                 const visiblePosts = businessPosts.slice(0, 3)
                 const hiddenPosts = businessPosts.slice(3)
-                
+
                 return (
                   <div key={businessId} className="bg-slate-700/30 rounded-lg p-4">
-                    <h4 className="text-accent-blue font-semibold mb-3 capitalize flex items-center justify-between">
-                      <span>{businessName.replace('-', ' ')} ({businessPosts.length} posts)</span>
-                      {hasMoreThanThree && (
+                    <h4 className="text-accent-blue font-semibold mb-3 flex items-center justify-between">
+                      <span>{business?.displayName || businessId} ({businessPosts.length} posts)</span>
+                      {hiddenPosts.length > 0 && (
                         <span className="text-xs text-dark-text-muted font-normal">
-                          Showing 3 of {businessPosts.length} • Scroll for more ↓
+                          Showing 3 of {businessPosts.length}
                         </span>
                       )}
                     </h4>
-                    
-                    {/* Always visible posts (first 3) */}
                     <div className="grid grid-cols-1 gap-4">
                       {visiblePosts.map(renderPost)}
                     </div>
-                    
-                    {/* Scrollable container for additional posts */}
-                    {hasMoreThanThree && (
+                    {hiddenPosts.length > 0 && (
                       <div className="mt-4 max-h-[600px] overflow-y-auto pr-2 border-t border-slate-600 pt-4">
                         <div className="grid grid-cols-1 gap-4">
                           {hiddenPosts.map(renderPost)}
@@ -812,34 +658,31 @@ REQUIREMENTS:
 
             {/* Bulk Actions */}
             <div className="mt-6 p-4 bg-slate-700/30 rounded-lg">
-              <h4 className="text-dark-text font-medium mb-3">🔧 Bulk Actions</h4>
+              <h4 className="text-dark-text font-medium mb-3">Bulk Actions</h4>
               <div className="flex flex-wrap gap-3">
                 <button
                   onClick={() => {
                     const allContent = weeklyPosts
                       .filter(p => p.content)
-                      .map(p => `${p.business.toUpperCase()} - ${p.day.toUpperCase()} (${p.platform}):\n${p.content}`)
+                      .map(p => `${p.businessName} - ${p.day.toUpperCase()} (${p.platform}):\n${p.content}`)
                       .join('\n\n---\n\n')
                     navigator.clipboard.writeText(allContent)
                   }}
                   className="btn btn-outline btn-sm"
                 >
-                  📋 Copy All Content
+                  Copy All Content
                 </button>
-                
                 <button
                   onClick={() => {
-                    const failedPosts = weeklyPosts.filter(p => p.status === 'error')
-                    failedPosts.forEach(post => regeneratePost(post))
+                    weeklyPosts.filter(p => p.status === 'error').forEach(post => regeneratePost(post))
                   }}
                   disabled={!weeklyPosts.some(p => p.status === 'error')}
                   className="btn btn-outline btn-sm"
                 >
-                  🔄 Regenerate Failed Posts
+                  Regenerate Failed Posts
                 </button>
-                
                 <button className="btn btn-outline btn-sm">
-                  📤 Export to Scheduler
+                  Export to Scheduler
                 </button>
               </div>
             </div>
@@ -848,4 +691,13 @@ REQUIREMENTS:
       </div>
     </CollapsibleSection>
   )
+}
+
+function getNextMonday(): Date {
+  const now = new Date()
+  const day = now.getDay()
+  const diff = day === 0 ? 1 : 8 - day // days until next Monday
+  const nextMon = new Date(now)
+  nextMon.setDate(now.getDate() + diff)
+  return nextMon
 }

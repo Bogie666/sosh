@@ -1,6 +1,9 @@
 // src/app/api/ai/generate-review-response/route.ts
+// Review response generation using full business context.
+
 import { NextRequest, NextResponse } from 'next/server'
 import { aiService } from '@/lib/ai-service'
+import { prisma } from '@/lib/prisma'
 
 export async function POST(request: NextRequest) {
   try {
@@ -12,11 +15,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { 
-      review, 
-      businessName,
-      locationName 
-    } = body
+    const { review, businessName, locationName, businessId } = body
 
     if (!review) {
       return NextResponse.json(
@@ -25,76 +24,86 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!businessName && !locationName) {
+    // Resolve business ID - try direct ID first, then look up by name
+    let resolvedBusinessId = businessId
+    if (!resolvedBusinessId && (businessName || locationName)) {
+      const business = await prisma.business.findFirst({
+        where: {
+          OR: [
+            { displayName: businessName || locationName },
+            { name: businessName || locationName },
+            { id: businessName || locationName }
+          ]
+        }
+      })
+      resolvedBusinessId = business?.id
+    }
+
+    if (!resolvedBusinessId) {
       return NextResponse.json(
-        { success: false, error: 'Business name or location name is required' },
+        { success: false, error: 'Business not found. Provide businessId or valid businessName.' },
         { status: 400 }
       )
     }
 
-    // Use locationName if provided, otherwise use businessName
-    const businessIdentifier = locationName || businessName
+    // Normalize the review into a standard format
+    const normalizedReview = {
+      reviewerName: review.reviewer?.displayName || review.reviewerName || 'Customer',
+      rating: normalizeRating(review),
+      content: review.comment || review.content || '',
+      starRating: review.starRating
+    }
 
-    console.log(`Generating AI review response for: ${businessIdentifier}`)
-    console.log(`Review rating: ${review.starRating}`)
-    console.log(`Review text: ${review.comment?.substring(0, 100)}...`)
-
-    // Generate the review response using the enhanced AI service
-    const result = await aiService.generateReviewResponse(
-      review, 
-      businessIdentifier
-    )
+    // Generate response using the unified AI service (loads full business context)
+    const result = await aiService.generateReviewResponse(normalizedReview, resolvedBusinessId)
 
     if (!result.success) {
       throw new Error(result.error)
     }
 
-    // Analyze the review sentiment for additional context
-    const sentiment = aiService.analyzeSentiment(review)
+    const sentiment = aiService.analyzeSentiment({
+      rating: normalizedReview.rating,
+      starRating: review.starRating
+    })
 
     return NextResponse.json({
       success: true,
       response: result.response,
       metadata: {
         ...result.metadata,
-        sentiment: sentiment,
-        businessIdentifier,
-        tokensUsed: result.metadata?.tokens_used || 0
+        sentiment
       }
     })
 
   } catch (error) {
     console.error('Error generating AI review response:', error)
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to generate review response' 
-      },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to generate review response' },
       { status: 500 }
     )
   }
 }
 
-// Handle GET request to check AI service status
 export async function GET() {
-  try {
-    return NextResponse.json({
-      success: true,
-      isConfigured: aiService.isConfigured(),
-      supportedBusinesses: ['lex', 'lyons', 'lex-etx'],
-      features: {
-        reviewResponses: true,
-        socialContent: true,
-        templates: true,
-        sentimentAnalysis: true
-      }
-    })
+  return NextResponse.json({
+    success: true,
+    isConfigured: aiService.isConfigured(),
+    features: {
+      reviewResponses: true,
+      socialContent: true,
+      templates: true,
+      sentimentAnalysis: true,
+      imageSelection: true,
+      postingOptimization: true,
+      contentFreshness: true
+    }
+  })
+}
 
-  } catch (error) {
-    console.error('Error getting AI service status:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to get service status' },
-      { status: 500 }
-    )
+function normalizeRating(review: any): number {
+  if (typeof review.rating === 'number') return review.rating
+  const map: Record<string, number> = {
+    'FIVE': 5, 'FOUR': 4, 'THREE': 3, 'TWO': 2, 'ONE': 1
   }
+  return map[review.starRating] || 3
 }

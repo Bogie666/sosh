@@ -1,14 +1,10 @@
 // src/app/api/ai/generate-content/route.ts
+// Simple content generation endpoint that delegates to the unified AI service.
+
 import { NextRequest, NextResponse } from 'next/server'
 import { aiService } from '@/lib/ai-service'
-
-// Helper function to determine current season (Dallas, TX climate)
-function getCurrentSeason(month: number): string {
-  if (month >= 2 && month <= 4) return 'Spring' // March-May: Mild, unpredictable
-  if (month >= 5 && month <= 9) return 'Summer' // June-October: Hot and humid
-  if (month >= 10 && month <= 11) return 'Fall' // November-December: Pleasant
-  return 'Winter' // January-February: Mild winter
-}
+import { prisma } from '@/lib/prisma'
+import { getPlatformSpec, getAllPlatforms } from '@/lib/platform-specs'
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,9 +16,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { 
+    const {
       prompt,
-      businessName = 'lex',
+      businessId,
+      businessName,
       platform = 'facebook',
       templateType,
       contentType = 'custom',
@@ -36,49 +33,58 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`Generating AI content for: ${businessName} on ${platform}`)
-    console.log(`Content type: ${contentType}`)
-    console.log(`Template: ${templateType || 'custom'}`)
+    // Resolve business ID
+    let resolvedId = businessId
+    if (!resolvedId && businessName) {
+      const business = await prisma.business.findFirst({
+        where: {
+          OR: [
+            { id: businessName },
+            { displayName: businessName },
+            { name: businessName }
+          ]
+        }
+      })
+      resolvedId = business?.id
+    }
 
-    let result
-
-    if (templateType) {
-      // Generate content using a predefined template
-      result = await aiService.generateContentFromTemplate(
-        templateType,
-        businessName,
-        platform,
-        options
-      )
-    } else {
-      // Generate custom content
-      result = await aiService.generateSocialContent(
-        prompt,
-        businessName,
-        platform,
-        options
+    if (!resolvedId) {
+      return NextResponse.json(
+        { success: false, error: 'Business not found. Provide businessId or businessName.' },
+        { status: 400 }
       )
     }
+
+    // Use the unified generation service
+    const result = await aiService.generateContent({
+      businessId: resolvedId,
+      platform,
+      day: options.day || new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(),
+      month: options.month || new Date().getMonth(),
+      includeSpecials: options.includeSpecials !== false,
+      includeImages: options.includeImages === true,
+      includeContentBlocks: options.useContentBlocks !== false,
+      customPrompt: prompt || `Create ${templateType} content`,
+      contentType
+    })
 
     if (!result.success) {
       throw new Error(result.error)
     }
 
-    // Get platform specifications for reference
-    const platformSpecs = aiService.getPlatformSpecs(platform)
+    const spec = getPlatformSpec(platform)
 
     return NextResponse.json({
       success: true,
       content: result.content,
       metadata: {
-        business: result.business,
-        platform: result.platform,
-        tokensUsed: result.tokens_used || 0,
-        contentLength: result.content.length,
+        business: result.metadata?.businessName,
+        platform,
+        contentLength: result.content?.length || 0,
         platformSpecs: {
-          maxLength: platformSpecs.maxLength,
-          recommendedLength: platformSpecs.recommendedLength,
-          withinLimits: result.content.length <= platformSpecs.maxLength
+          maxLength: spec.charLimit,
+          recommendedLength: spec.recommendedLength,
+          withinLimits: (result.content?.length || 0) <= spec.charLimit
         },
         generatedAt: new Date().toISOString()
       }
@@ -87,137 +93,50 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error generating AI content:', error)
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to generate content' 
-      },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to generate content' },
       { status: 500 }
     )
   }
 }
 
-// Enhanced GET request for available templates and platform info
 export async function GET() {
   try {
-    const currentSeason = getCurrentSeason(new Date().getMonth())
-    
-    const availableTemplates = [
-      {
-        id: 'seasonal_tip',
-        name: 'Seasonal Tips',
-        description: 'Weather-appropriate HVAC tips and advice',
-        category: 'Educational',
-        frequency: 'Weekly'
-      },
-      {
-        id: 'maintenance_reminder',
-        name: 'Maintenance Reminders',
-        description: 'Seasonal maintenance and tune-up reminders',
-        category: 'Service',
-        frequency: 'Bi-weekly'
-      },
-      {
-        id: 'weather_alert',
-        name: 'Weather Alerts',
-        description: 'Weather-related HVAC protection tips',
-        category: 'Urgent',
-        frequency: 'As-needed'
-      },
-      {
-        id: 'promotion',
-        name: 'Promotions',
-        description: 'Service promotions and special offers',
-        category: 'Marketing',
-        frequency: 'Monthly'
-      },
-      {
-        id: 'customer_story',
-        name: 'Customer Stories',
-        description: 'Success stories and testimonials',
-        category: 'Social Proof',
-        frequency: 'Bi-weekly'
-      },
-      {
-        id: 'company_update',
-        name: 'Company Updates',
-        description: 'Company news and announcements',
-        category: 'Company',
-        frequency: 'Monthly'
-      },
-      {
-        id: 'emergency_service',
-        name: 'Emergency Service',
-        description: '24/7 emergency service availability',
-        category: 'Service',
-        frequency: 'Monthly'
-      }
-    ]
+    // Load businesses dynamically from database
+    const businesses = await prisma.business.findMany({
+      select: { id: true, displayName: true, brandVoice: true, tagline: true }
+    })
 
-    const supportedPlatforms = [
-      {
-        id: 'facebook',
-        name: 'Facebook',
-        icon: '📘',
-        specs: aiService.getPlatformSpecs('facebook')
-      },
-      {
-        id: 'instagram',
-        name: 'Instagram',
-        icon: '📷',
-        specs: aiService.getPlatformSpecs('instagram')
-      },
-      {
-        id: 'twitter',
-        name: 'X/Twitter',
-        icon: '🐦',
-        specs: aiService.getPlatformSpecs('twitter')
-      },
-      {
-        id: 'google',
-        name: 'Google Business Profile',
-        icon: '🏢',
-        specs: aiService.getPlatformSpecs('google')
-      }
-    ]
-
-    const supportedBusinesses = [
-      {
-        id: 'lex',
-        name: 'Lex Dallas',
-        voice: 'Professional and polished',
-        tagline: 'The Gold Standard of White Glove Service'
-      },
-      {
-        id: 'lyons',
-        name: 'Lyons',
-        voice: 'Confident and approachable',
-        tagline: 'The King of 5-Star Service'
-      },
-      {
-        id: 'lex-etx',
-        name: 'Lex ETX',
-        voice: 'Honest and straightforward',
-        tagline: 'Quality workmanship, honest service'
-      }
-    ]
+    const platforms = getAllPlatforms().map((p: any) => ({
+      id: p.id,
+      name: p.name,
+      icon: p.icon,
+      charLimit: p.charLimit,
+      recommendedLength: p.recommendedLength
+    }))
 
     return NextResponse.json({
       success: true,
       isConfigured: aiService.isConfigured(),
-      currentSeason,
-      availableTemplates,
-      supportedPlatforms,
-      supportedBusinesses,
+      currentSeason: getSeason(new Date().getMonth()),
+      supportedPlatforms: platforms,
+      supportedBusinesses: businesses.map((b: any) => ({
+        id: b.id,
+        name: b.displayName,
+        voice: b.brandVoice || 'Professional',
+        tagline: b.tagline || ''
+      })),
       features: {
         reviewResponses: true,
         socialContent: true,
         templates: true,
         sentimentAnalysis: true,
         weeklyAutomation: true,
-        platformOptimization: true
+        platformOptimization: true,
+        imageSelection: true,
+        contentFreshness: true,
+        postingTimeOptimization: true
       }
     })
-
   } catch (error) {
     console.error('Error getting AI service info:', error)
     return NextResponse.json(
@@ -225,4 +144,11 @@ export async function GET() {
       { status: 500 }
     )
   }
+}
+
+function getSeason(month: number): string {
+  if (month >= 2 && month <= 4) return 'Spring'
+  if (month >= 5 && month <= 7) return 'Summer'
+  if (month >= 8 && month <= 10) return 'Fall'
+  return 'Winter'
 }

@@ -5,35 +5,29 @@ import { useState, useEffect } from 'react'
 import CollapsibleSection from './CollapsibleSection'
 import Image from 'next/image'
 
-// Business and Platform options
-const BUSINESSES = [
-  { id: 'lex-dallas', name: 'Lex Dallas', color: 'text-blue-400' },
-  { id: 'lex-etx', name: 'Lex ETX', color: 'text-green-400' },
-  { id: 'lyons', name: 'Lyons', color: 'text-purple-400' }
-]
-
+// Platform specs (client-side copy of platform-specs.ts)
 const PLATFORMS = [
   { id: 'google', name: 'Google Business Profile', icon: '🏢', color: 'text-blue-400', charLimit: 1500, sweet: '200-400' },
   { id: 'facebook', name: 'Facebook', icon: '📘', color: 'text-blue-500', charLimit: 63206, sweet: '200-400' },
   { id: 'instagram', name: 'Instagram', icon: '📷', color: 'text-pink-400', charLimit: 2200, sweet: '100-200' },
-  { id: 'twitter', name: 'X/Twitter', icon: '🦅', color: 'text-sky-400', charLimit: 280, sweet: '240-280' }
+  { id: 'twitter', name: 'X/Twitter', icon: '🐦', color: 'text-sky-400', charLimit: 280, sweet: '240-270' }
 ]
 
 // Templates available
 const AVAILABLE_TEMPLATES = [
-  { id: 'seasonal_tip', name: 'Seasonal Tips', description: 'Weather-appropriate HVAC tips and advice', category: 'Educational' },
+  { id: 'seasonal_tip', name: 'Seasonal Tips', description: 'Weather-appropriate tips and advice', category: 'Educational' },
   { id: 'maintenance_reminder', name: 'Maintenance Reminders', description: 'Regular service and tune-up reminders', category: 'Service' },
-  { id: 'weather_alert', name: 'Weather Alerts', description: 'Weather-related HVAC protection tips', category: 'Urgent' },
+  { id: 'weather_alert', name: 'Weather Alerts', description: 'Weather-related protection tips', category: 'Urgent' },
   { id: 'promotion', name: 'Special Promotions', description: 'Service promotions and special offers', category: 'Marketing' },
   { id: 'customer_story', name: 'Customer Success Stories', description: 'Testimonials and positive reviews', category: 'Social Proof' },
   { id: 'company_update', name: 'Company News', description: 'Business updates and announcements', category: 'Company' },
   { id: 'emergency_service', name: 'Emergency Service', description: '24/7 emergency availability reminders', category: 'Service' }
 ]
 
-// Daily themes for content structure
-const DAILY_THEMES = {
-  monday: { theme: 'Monday Motivation', focus: 'Start week strong with service highlights', emoji: '💪' },
-  tuesday: { theme: 'Tuesday Tips', focus: 'Educational HVAC/plumbing/electrical tips', emoji: '💡' },
+// Daily themes
+const DAILY_THEMES: Record<string, { theme: string; focus: string; emoji: string }> = {
+  monday: { theme: 'Monday Motivation', focus: 'Start week strong with energy and highlights', emoji: '💪' },
+  tuesday: { theme: 'Tuesday Tips', focus: 'Educational tips and advice', emoji: '💡' },
   wednesday: { theme: 'Wednesday Specials', focus: 'Mid-week promotional offers', emoji: '🎯' },
   thursday: { theme: 'Thursday Maintenance', focus: 'Maintenance reminders and safety tips', emoji: '🔧' },
   friday: { theme: 'Friday Prep', focus: 'Weekend preparation and emergency service', emoji: '🏠' },
@@ -118,15 +112,19 @@ interface PostScheduleItem {
 export default function AIContentGenerator() {
   const [capabilities, setCapabilities] = useState<AICapabilities | null>(null)
   const [loading, setLoading] = useState(false)
-  
+
+  // Dynamic business loading from database
+  const [dynamicBusinesses, setDynamicBusinesses] = useState<Array<{ id: string; name: string; displayName: string; tagline?: string }>>([])
+  const [businessesLoaded, setBusinessesLoaded] = useState(false)
+
   // Settings integration
   const [settingsLoading, setSettingsLoading] = useState(false)
   const [businessSettings, setBusinessSettings] = useState<Record<string, BusinessSettings>>({})
   const [monthlySpecials, setMonthlySpecials] = useState<Record<string, any>>({})
   const [postingSchedules, setPostingSchedules] = useState<Record<string, PostingSchedule>>({})
-  
+
   // Selection state
-  const [selectedBusinesses, setSelectedBusinesses] = useState<string[]>(['lex-dallas'])
+  const [selectedBusinesses, setSelectedBusinesses] = useState<string[]>([])
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['facebook'])
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>(['seasonal_tip', 'maintenance_reminder', 'promotion'])
   
@@ -178,6 +176,29 @@ export default function AIContentGenerator() {
     relevantMonths: number[]
     postCount: number
   } | null>(null)
+
+  // Load businesses from database on mount
+  useEffect(() => {
+    async function loadBusinesses() {
+      try {
+        const res = await fetch('/api/businesses')
+        const data = await res.json()
+        if (data.success && data.businesses) {
+          setDynamicBusinesses(data.businesses.map((b: any) => ({
+            id: b.id, name: b.name, displayName: b.displayName, tagline: b.tagline
+          })))
+          if (data.businesses.length > 0 && selectedBusinesses.length === 0) {
+            setSelectedBusinesses([data.businesses[0].id])
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load businesses:', err)
+      } finally {
+        setBusinessesLoaded(true)
+      }
+    }
+    loadBusinesses()
+  }, [])
 
   // Initialize capabilities and settings
   useEffect(() => {
@@ -1390,7 +1411,7 @@ const postNow = async (postId: string) => {
 
   // FIXED: Render a post card
   const renderPost = (post: WeeklyPost, index: number) => {
-    const businessInfo = BUSINESSES.find(b => b.id === post.business)
+    const businessInfo = dynamicBusinesses.find(b => b.id === post.business) || { id: post.business, name: post.business, displayName: post.business }
     const platformInfo = PLATFORMS.find(p => p.id === post.platform)
     const dayTheme = DAILY_THEMES[post.day as keyof typeof DAILY_THEMES]
     const isExpanded = expandedPosts.has(post.id)
@@ -1802,7 +1823,11 @@ const postNow = async (postId: string) => {
                 Select Businesses
               </label>
               <div className="space-y-2">
-                {BUSINESSES.map(business => (
+                {dynamicBusinesses.length === 0 && !businessesLoaded ? (
+                  <div className="text-dark-text-muted text-sm">Loading businesses...</div>
+                ) : dynamicBusinesses.length === 0 ? (
+                  <div className="text-dark-text-muted text-sm">No businesses found. Add businesses in Settings.</div>
+                ) : dynamicBusinesses.map(business => (
                   <label key={business.id} className="flex items-center gap-2 cursor-pointer">
                     <input
                       type="checkbox"
@@ -1816,8 +1841,8 @@ const postNow = async (postId: string) => {
                       }}
                       className="checkbox-dark"
                     />
-                    <span className={`${business.color} font-medium`}>
-                      {business.name}
+                    <span className="text-dark-text font-medium">
+                      {business.displayName}
                     </span>
                   </label>
                 ))}

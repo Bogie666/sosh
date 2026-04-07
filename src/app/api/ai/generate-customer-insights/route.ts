@@ -144,7 +144,7 @@ async function generateReviewInsights(reviews: any[], timeframe: string) {
   }
 
   // Generate AI insights
-  const prompt = `Analyze these customer reviews for an HVAC, plumbing, and electrical service company.
+  const prompt = `Analyze these customer reviews for a service company.
 
 POSITIVE REVIEWS (${reviews.filter(r => r.rating >= 4).length} reviews):
 ${positiveReviews || 'No positive reviews available'}

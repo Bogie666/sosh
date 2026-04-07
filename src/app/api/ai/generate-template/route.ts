@@ -1,14 +1,7 @@
 // src/app/api/ai/generate-template/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { aiService } from '@/lib/ai-service'
-
-// Helper function to determine current season (Dallas, TX climate)
-function getCurrentSeason(month: number): string {
-  if (month >= 2 && month <= 4) return 'Spring' // March-May: Mild, unpredictable
-  if (month >= 5 && month <= 9) return 'Summer' // June-October: Hot and humid
-  if (month >= 10 && month <= 11) return 'Fall' // November-December: Pleasant
-  return 'Winter' // January-February: Mild winter
-}
+import { prisma } from '@/lib/prisma'
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,22 +13,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { 
-      month, 
-      specials, 
-      businesses, 
-      platforms, 
+    const {
+      month,
+      specials,
+      businesses,
+      platforms,
       type = 'template',
       customPrompt,
       templateType = 'seasonal_tip'
     } = body
-
-    if (!month) {
-      return NextResponse.json(
-        { success: false, error: 'Month is required' },
-        { status: 400 }
-      )
-    }
 
     if (!businesses?.length) {
       return NextResponse.json(
@@ -44,91 +30,55 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate content for the primary business (first selected)
     const primaryBusiness = businesses[0]
     const primaryPlatform = platforms?.[0] || 'facebook'
 
-    let generatedContent = ''
+    // Resolve the business ID
+    let businessId = primaryBusiness
+    const business = await prisma.business.findFirst({
+      where: {
+        OR: [
+          { id: primaryBusiness },
+          { displayName: primaryBusiness },
+          { name: primaryBusiness }
+        ]
+      }
+    })
+    if (business) businessId = business.id
 
-    if (type === 'custom' && customPrompt) {
-      // Generate custom content
-      const result = await aiService.generateSocialContent(
-        customPrompt,
-        primaryBusiness,
-        primaryPlatform
-      )
-      
-      if (result.success) {
-        generatedContent = result.content
-      } else {
-        throw new Error(result.error)
-      }
-    } else if (type === 'template') {
-      // Generate template-based content
-      let prompt = `Create engaging ${month} social media content`
-      
-      // Add specials information if provided
-      if (specials && Object.keys(specials).length > 0) {
-        const specialsList = Object.entries(specials)
-          .flatMap(([category, items]) => 
-            Array.isArray(items) ? items.map(item => `${category}: ${item}`) : []
-          )
-        
-        if (specialsList.length > 0) {
-          prompt += ` featuring these promotions: ${specialsList.join(', ')}`
-        }
-      }
-      
-      // Add business context
-      if (businesses.length > 1) {
-        prompt += `. This content will be used across multiple business locations: ${businesses.join(', ')}`
-      }
-      
-      // Add platform context
-      if (platforms && platforms.length > 0) {
-        prompt += `. Optimize for these platforms: ${platforms.join(', ')}`
-      }
+    // Build custom prompt if needed
+    let prompt = customPrompt || `Create engaging ${month || 'monthly'} social media content`
 
-      const result = await aiService.generateSocialContent(
-        prompt,
-        primaryBusiness,
-        primaryPlatform
-      )
-      
-      if (result.success) {
-        generatedContent = result.content
-      } else {
-        throw new Error(result.error)
-      }
-    } else {
-      // Generate content using predefined templates
-      const result = await aiService.generateContentFromTemplate(
-        templateType,
-        primaryBusiness,
-        primaryPlatform,
-        {
-          month,
-          specials,
-          businesses,
-          platforms
-        }
-      )
-      
-      if (result.success) {
-        generatedContent = result.content
-      } else {
-        throw new Error(result.error)
+    if (specials && Object.keys(specials).length > 0) {
+      const specialsList = Object.entries(specials)
+        .flatMap(([category, items]) =>
+          Array.isArray(items) ? items.map(item => `${category}: ${item}`) : []
+        )
+      if (specialsList.length > 0) {
+        prompt += ` featuring these promotions: ${specialsList.join(', ')}`
       }
     }
 
-    // Add business-specific adaptations if multiple businesses
-    if (businesses.length > 1) {
-      generatedContent += `\n\n[Note: This content can be adapted for ${businesses.join(', ')}]`
+    // Use the unified content generation
+    const result = await aiService.generateContent({
+      businessId,
+      platform: primaryPlatform,
+      day: new Date().toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase(),
+      month: month ? getMonthNumber(month) : new Date().getMonth(),
+      includeSpecials: !!specials,
+      includeImages: false,
+      includeContentBlocks: true,
+      customPrompt: prompt,
+      contentType: templateType
+    })
+
+    if (!result.success) {
+      throw new Error(result.error)
     }
 
     return NextResponse.json({
       success: true,
-      content: generatedContent,
+      content: result.content,
       metadata: {
         month,
         businesses,
@@ -141,43 +91,35 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error generating AI content:', error)
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to generate content' 
-      },
+      { success: false, error: error instanceof Error ? error.message : 'Failed to generate content' },
       { status: 500 }
     )
   }
 }
 
-// Also handle GET requests for template info
 export async function GET() {
-  try {
-    // FIXED: Use the local getCurrentSeason function instead of aiService method
-    const currentSeason = getCurrentSeason(new Date().getMonth())
-    
-    const availableTemplates = [
-      'seasonal_tip',
-      'maintenance_reminder', 
-      'weather_alert',
-      'promotion',
-      'customer_story',
-      'company_update',
-      'emergency_service'
-    ]
+  return NextResponse.json({
+    success: true,
+    currentSeason: getSeason(new Date().getMonth()),
+    availableTemplates: [
+      'seasonal_tip', 'maintenance_reminder', 'weather_alert',
+      'promotion', 'customer_story', 'company_update', 'emergency_service'
+    ],
+    isConfigured: aiService.isConfigured()
+  })
+}
 
-    return NextResponse.json({
-      success: true,
-      currentSeason,
-      availableTemplates,
-      isConfigured: aiService.isConfigured()
-    })
+function getSeason(month: number): string {
+  if (month >= 2 && month <= 4) return 'Spring'
+  if (month >= 5 && month <= 7) return 'Summer'
+  if (month >= 8 && month <= 10) return 'Fall'
+  return 'Winter'
+}
 
-  } catch (error) {
-    console.error('Error getting AI info:', error)
-    return NextResponse.json(
-      { success: false, error: 'Failed to get AI information' },
-      { status: 500 }
-    )
+function getMonthNumber(monthName: string): number {
+  const months: Record<string, number> = {
+    january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+    july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
   }
+  return months[monthName.toLowerCase()] ?? new Date().getMonth()
 }
