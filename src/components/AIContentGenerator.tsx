@@ -231,7 +231,7 @@ export default function AIContentGenerator() {
         isConfigured: data.success,
         availableTemplates: AVAILABLE_TEMPLATES,
         supportedPlatforms: PLATFORMS,
-        supportedBusinesses: BUSINESSES
+        supportedBusinesses: dynamicBusinesses
       })
     } catch (error) {
       console.error('Failed to load AI capabilities:', error)
