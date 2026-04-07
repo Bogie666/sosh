@@ -1488,8 +1488,8 @@ const postNow = async (postId: string) => {
             {/* Content */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-1">
-                <span className={`text-xs font-medium ${businessInfo?.color}`}>
-                  {businessInfo?.name}
+                <span className="text-xs font-medium text-accent-blue">
+                  {businessInfo?.displayName}
                 </span>
                 <span className="text-slate-600">•</span>
                 <span className={`text-xs ${platformInfo?.color}`}>
@@ -1543,7 +1543,7 @@ const postNow = async (postId: string) => {
             )}
             <div>
               <h4 className="font-medium text-dark-text">
-                <span className={businessInfo?.color}>{businessInfo?.name}</span>
+                <span className="text-accent-blue">{businessInfo?.displayName}</span>
                 {' • '}
                 <span className={platformInfo?.color}>
                   {platformInfo?.icon} {platformInfo?.name}
