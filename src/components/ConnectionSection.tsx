@@ -193,36 +193,34 @@ export default function ConnectionSection({ session }: ConnectionSectionProps) {
     
     if (status.loading) {
       return (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/60 border border-slate-600/40">
-          <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse"></div>
-          <span className="text-lg">{icon}</span>
-          <span className="text-sm font-medium text-yellow-300">Checking...</span>
+        <div className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-slate-700/60 border border-slate-600/40">
+          <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse flex-shrink-0"></div>
+          <span className="text-sm sm:text-lg">{icon}</span>
+          <span className="text-xs sm:text-sm font-medium text-yellow-300 hidden sm:inline">Checking...</span>
         </div>
       )
     }
-    
+
     if (status.connected) {
       const displayName = status.count > 0 ? `${name} (${status.count})` : name
-      console.log(`${platformId} display name:`, displayName) // Debug log
-      
+
       return (
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/60 border border-slate-600/40">
-          <div className="w-2 h-2 rounded-full bg-green-400 shadow-green-400/50 shadow-sm animate-pulse"></div>
-          <span className="text-lg">{icon}</span>
-          <span className="text-sm font-medium text-green-300">
+        <div className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-slate-700/60 border border-slate-600/40">
+          <div className="w-2 h-2 rounded-full bg-green-400 shadow-green-400/50 shadow-sm animate-pulse flex-shrink-0"></div>
+          <span className="text-sm sm:text-lg">{icon}</span>
+          <span className="text-xs sm:text-sm font-medium text-green-300 truncate max-w-[80px] sm:max-w-none">
             {displayName}
           </span>
         </div>
       )
     }
-    
+
     return (
-      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-700/60 border border-slate-600/40 group relative">
-        <div className="w-2 h-2 rounded-full bg-red-400 shadow-red-400/50 shadow-sm"></div>
-        <span className="text-lg">{icon}</span>
-        <span className="text-sm font-medium text-red-300">{name}</span>
-        
-        {/* Tooltip with error message */}
+      <div className="flex items-center gap-1.5 px-2 py-1 sm:px-3 sm:py-1.5 rounded-lg bg-slate-700/60 border border-slate-600/40 group relative">
+        <div className="w-2 h-2 rounded-full bg-red-400 shadow-red-400/50 shadow-sm flex-shrink-0"></div>
+        <span className="text-sm sm:text-lg">{icon}</span>
+        <span className="text-xs sm:text-sm font-medium text-red-300 truncate max-w-[80px] sm:max-w-none">{name}</span>
+
         {status.error && (
           <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity duration-200 whitespace-nowrap z-10">
             {status.error}
@@ -246,13 +244,14 @@ export default function ConnectionSection({ session }: ConnectionSectionProps) {
   }
 
   return (
-    <section className="bg-gradient-to-r from-slate-800/80 via-slate-700/80 to-slate-800/80 border border-slate-600/50 rounded-xl p-4 mb-6 backdrop-blur-lg shadow-lg">
-      <div className="flex items-center justify-between flex-wrap gap-4">
-        
-        {/* Left Side - Platform Status */}
-        <div className="flex items-center gap-6 flex-wrap">
-          <div className="flex items-center gap-1">
-            <span className="text-sm font-medium text-slate-300 mr-2">Platforms:</span>
+    <section className="bg-gradient-to-r from-slate-800/80 via-slate-700/80 to-slate-800/80 border border-slate-600/50 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 backdrop-blur-lg shadow-lg overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+
+        {/* Platform Status - wraps on mobile */}
+        <div className="flex items-center gap-2 flex-wrap min-w-0">
+          <span className="text-sm font-medium text-slate-300 mr-1 flex-shrink-0">Platforms:</span>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
             
             {/* Google Business Profile */}
             {getPlatformStatusComponent('google', 'Google', '🏢')}
@@ -268,8 +267,8 @@ export default function ConnectionSection({ session }: ConnectionSectionProps) {
           </div>
         </div>
 
-        {/* Right Side - Actions */}
-        <div className="flex items-center gap-3">
+        {/* Actions */}
+        <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0 flex-wrap">
           {/* Status Message */}
           {connectionStatus === 'checking' && (
             <div className="flex items-center gap-2 text-blue-400">
