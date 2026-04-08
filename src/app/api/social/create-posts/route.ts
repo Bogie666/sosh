@@ -116,6 +116,9 @@ export async function POST(request: NextRequest) {
     const libraryImageIdsString = formData.get('libraryImageIds') as string
     const libraryImageIds = libraryImageIdsString ? JSON.parse(libraryImageIdsString) : []
 
+    // NEW: Handle AI-selected image URL (from content generator)
+    const aiImageUrl = formData.get('aiImageUrl') as string | null
+
     // Extract directly uploaded images from FormData (for backward compatibility)
     const uploadedImages: File[] = []
     for (let i = 0; i < imageCount; i++) {
@@ -135,8 +138,30 @@ export async function POST(request: NextRequest) {
       businesses,
       scheduling,
       imageCount: uploadedImages.length,
-      libraryImageCount: libraryImageIds.length
+      libraryImageCount: libraryImageIds.length,
+      aiImageUrl: aiImageUrl ? aiImageUrl.substring(0, 80) + '...' : null
     })
+
+    // Download AI-selected image if provided
+    let aiImages: File[] = []
+    if (aiImageUrl) {
+      try {
+        console.log(`🤖 Downloading AI-selected image: ${aiImageUrl.substring(0, 80)}...`)
+        const response = await fetch(aiImageUrl)
+        if (response.ok) {
+          const buffer = await response.arrayBuffer()
+          const contentType = response.headers.get('content-type') || 'image/jpeg'
+          const extension = contentType.includes('png') ? 'png' : 'jpg'
+          const imageFile = new File([buffer], `ai-selected.${extension}`, { type: contentType })
+          aiImages.push(imageFile)
+          console.log(`✅ AI image downloaded: ${buffer.byteLength} bytes`)
+        } else {
+          console.error(`❌ Failed to download AI image: ${response.status}`)
+        }
+      } catch (error) {
+        console.error('❌ Failed to download AI-selected image:', error)
+      }
+    }
 
     // NEW: Fetch library images and convert to usable format
     let libraryImages: File[] = []
@@ -184,9 +209,9 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Combine uploaded images and library images
-    const images = [...uploadedImages, ...libraryImages]
-    console.log(`📊 Total images for posting: ${images.length} (${uploadedImages.length} uploaded + ${libraryImages.length} from library)`)
+    // Combine all image sources: uploaded + library + AI-selected
+    const images = [...uploadedImages, ...libraryImages, ...aiImages]
+    console.log(`📊 Total images for posting: ${images.length} (${uploadedImages.length} uploaded + ${libraryImages.length} library + ${aiImages.length} AI-selected)`)
 
     if (!content?.trim()) {
       return NextResponse.json(
