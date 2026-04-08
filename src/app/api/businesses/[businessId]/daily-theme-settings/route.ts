@@ -101,11 +101,12 @@ export async function PUT(
               businessId,
               enabledDays: data.enabledDays,
               contentStrategy: data.contentStrategy,
-              seasonalAdjustments: data.seasonalAdjustments || true,
+              seasonalAdjustments: data.seasonalAdjustments ?? true,
               promotionFocus: data.promotionFocus || {
                 primary: 'wednesday',
                 secondary: 'monday'
               },
+              customThemes: data.customThemes || {},
               customSettings: data.customSettings || {},
               updatedAt: new Date().toISOString()
             }
@@ -137,11 +138,12 @@ export async function PUT(
               businessId,
               enabledDays: data.enabledDays,
               contentStrategy: data.contentStrategy,
-              seasonalAdjustments: data.seasonalAdjustments || true,
+              seasonalAdjustments: data.seasonalAdjustments ?? true,
               promotionFocus: data.promotionFocus || {
                 primary: 'wednesday',
                 secondary: 'monday'
               },
+              customThemes: data.customThemes || {},
               customSettings: data.customSettings || {},
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString()

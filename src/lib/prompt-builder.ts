@@ -46,7 +46,12 @@ export function buildContentPrompt(
 ): PromptParts {
   const biz = ctx.business
   const spec = getPlatformSpec(req.platform)
-  const dailyTheme = DailyThemeService.getDailyTheme(req.day)
+  // Use custom daily theme from business settings if available, else fall back to defaults
+  const customTheme = ctx.customDailyThemes?.[req.day.toLowerCase()]
+  const defaultTheme = DailyThemeService.getDailyTheme(req.day)
+  const dailyTheme = customTheme
+    ? { theme: customTheme.theme, focus: customTheme.focus, emoji: customTheme.emoji, contentStyle: customTheme.contentStyle, templates: defaultTheme?.templates || [], description: customTheme.focus, promotionWeight: defaultTheme?.promotionWeight || 50 }
+    : defaultTheme
   const season = getSeason(req.month)
 
   // --- System prompt: shaped by the business's actual voice ---

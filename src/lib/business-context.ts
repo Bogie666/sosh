@@ -67,12 +67,20 @@ export interface ImageAsset {
   originalName: string
 }
 
+export interface CustomDailyTheme {
+  theme: string
+  focus: string
+  emoji: string
+  contentStyle: string
+}
+
 export interface FullBusinessContext {
   business: BusinessContext
   contentBlocks: ContentBlockSet
   monthlySpecials: MonthlySpecialSet[]
   images: ImageAsset[]
   recentPostThemes: string[]
+  customDailyThemes: Record<string, CustomDailyTheme> | null
 }
 
 // Cache with TTL
@@ -164,7 +172,8 @@ export async function loadBusinessContext(businessId: string): Promise<FullBusin
       lastUsed: img.lastUsed,
       originalName: img.originalName
     })),
-    recentPostThemes: extractRecentThemes(recentPosts.map((p: any) => p.content))
+    recentPostThemes: extractRecentThemes(recentPosts.map((p: any) => p.content)),
+    customDailyThemes: extractCustomThemes(profile)
   }
 
   contextCache.set(businessId, { data: ctx, expires: Date.now() + CACHE_TTL })
@@ -286,4 +295,14 @@ function extractRecentThemes(contents: string[]): string[] {
   }
 
   return themes
+}
+
+function extractCustomThemes(profile: any): Record<string, CustomDailyTheme> | null {
+  if (!profile?.autoPostSettings) return null
+  const settings = profile.autoPostSettings as any
+  const customThemes = settings?.dailyThemeSettings?.customThemes
+  if (!customThemes || typeof customThemes !== 'object') return null
+  // Only return if at least one theme has been customized
+  if (Object.keys(customThemes).length === 0) return null
+  return customThemes
 }
