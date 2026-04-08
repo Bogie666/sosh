@@ -6,7 +6,7 @@ import { prisma } from '@/lib/prisma'
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
-    
+
     if (!session || !session.user?.id) {
       return NextResponse.json(
         { success: false, error: 'Not authenticated' },
@@ -48,13 +48,22 @@ export async function POST(request: NextRequest) {
     // Parse and validate scheduled date
     const scheduledDate = new Date(scheduledFor)
     const now = new Date()
-    
+
     if (scheduledDate <= now) {
       return NextResponse.json(
         { success: false, error: 'Scheduled time must be in the future' },
         { status: 400 }
       )
     }
+
+    // Ensure user exists in database (Prisma adapter is disabled, so users
+    // aren't auto-created on sign-in. We need the record for the FK.)
+    const userId = session.user.id
+    await prisma.user.upsert({
+      where: { id: userId },
+      update: { name: session.user.name, email: session.user.email || '', image: session.user.image },
+      create: { id: userId, name: session.user.name, email: session.user.email || '', image: session.user.image }
+    })
 
     // Create scheduled post in database
     const scheduledPost = await prisma.scheduledPost.create({

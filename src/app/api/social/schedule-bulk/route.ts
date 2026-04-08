@@ -33,6 +33,14 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Ensure user exists in database (Prisma adapter is disabled)
+    const userId = session.user.id
+    await prisma.user.upsert({
+      where: { id: userId },
+      update: { name: session.user.name, email: session.user.email || '', image: session.user.image },
+      create: { id: userId, name: session.user.name, email: session.user.email || '', image: session.user.image }
+    })
+
     const now = new Date()
     const results = []
     const errors = []
