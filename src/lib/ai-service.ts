@@ -2,7 +2,7 @@
 // Unified AI service that uses business context for all generation.
 // No hardcoded business data. Everything flows from the database through business-context.ts.
 
-import { loadBusinessContext, FullBusinessContext, getImageUrlForPlatform } from './business-context'
+import { loadBusinessContext, FullBusinessContext, getImageUrlForPlatform, clearBusinessContextCache } from './business-context'
 import { buildContentPrompt, buildReviewResponsePrompt, ContentGenerationRequest } from './prompt-builder'
 import { getPlatformSpec } from './platform-specs'
 import { selectBestImage, ImageSelectionResult } from './image-selector'
@@ -39,6 +39,10 @@ class AIService {
       }
 
       // 1. Load full business context from database
+      // Clear cache if we have excludeImageIds (batch mode) so we see fresh usage data
+      if (req.excludeImageIds && req.excludeImageIds.length > 0) {
+        clearBusinessContextCache(req.businessId)
+      }
       const ctx = await loadBusinessContext(req.businessId)
 
       // 2. Build prompt using business context
@@ -60,10 +64,10 @@ class AIService {
         content = await this.retryForTwitter(content, ctx, req)
       }
 
-      // 6. Select best matching image
+      // 6. Select best matching image (pass excludeImageIds for batch variety)
       let image: ImageSelectionResult | null = null
       if (req.includeImages && ctx.images.length > 0) {
-        image = selectBestImage(ctx.images, content, req.day, req.platform)
+        image = selectBestImage(ctx.images, content, req.day, req.platform, req.excludeImageIds || [])
       }
 
       // 7. Validate specials inclusion

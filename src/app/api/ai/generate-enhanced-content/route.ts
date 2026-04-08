@@ -58,7 +58,8 @@ export async function POST(request: NextRequest) {
       includeContentBlocks,
       customPrompt: prompt,
       excludeThemes,
-      serviceTypeFocus
+      serviceTypeFocus,
+      excludeImageIds
     })
 
     if (!result.success) {

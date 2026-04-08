@@ -25,6 +25,7 @@ export interface ContentGenerationRequest {
   customPrompt?: string
   excludeThemes?: string[]
   serviceTypeFocus?: string
+  excludeImageIds?: string[]
 }
 
 interface PromptParts {
