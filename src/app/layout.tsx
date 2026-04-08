@@ -1,5 +1,5 @@
 // src/app/layout.tsx
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import { SessionProvider } from 'next-auth/react'
 import { auth } from '@/auth'
@@ -13,6 +13,12 @@ export const metadata: Metadata = {
   description: 'AI-powered social media automation for multiple business locations',
   keywords: ['social media', 'automation', 'Google Business Profile', 'AI', 'reviews'],
   authors: [{ name: 'Ryan' }],
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
 }
 
 export default async function RootLayout({

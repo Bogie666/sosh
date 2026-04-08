@@ -7,240 +7,325 @@
   * {
     @apply border-dark-border;
   }
-  
+
   html {
     @apply scroll-smooth;
   }
-  
+
   body {
     @apply overflow-x-hidden;
   }
 }
 
 @layer components {
-  /* Custom button styles matching original design */
+  /* Buttons - mobile-first with proper touch targets */
   .btn {
-    @apply inline-flex items-center gap-2 px-6 py-3 border-0 rounded-lg font-semibold cursor-pointer transition-all duration-300 text-sm;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 border-0 rounded-lg font-semibold cursor-pointer transition-all duration-300 text-sm min-h-[44px];
   }
-  
+
+  @media (min-width: 640px) {
+    .btn {
+      @apply px-6 py-3;
+    }
+  }
+
   .btn:hover {
     @apply -translate-y-0.5 shadow-lg;
   }
-  
+
+  @media (hover: none) {
+    .btn:hover {
+      @apply translate-y-0 shadow-none;
+    }
+    .btn:active {
+      @apply scale-95;
+    }
+  }
+
   .btn-primary {
     @apply bg-gradient-blue text-white shadow-glow-blue;
   }
-  
+
   .btn-primary:hover {
     @apply shadow-xl;
   }
-  
+
   .btn-secondary {
     @apply bg-gradient-gray text-white;
   }
-  
+
   .btn-success {
     @apply bg-gradient-green text-white shadow-glow-green;
   }
-  
+
   .btn-success:hover {
     @apply shadow-xl;
   }
-  
+
   .btn-outline {
     @apply bg-transparent border-2 border-slate-600 text-dark-text-muted;
   }
-  
+
   .btn-outline:hover {
     @apply bg-slate-600/20 border-slate-500 text-dark-text;
   }
-  
+
   .btn-sm {
-    @apply px-3 py-1.5 text-xs;
+    @apply px-3 py-2 text-xs min-h-[36px];
   }
-  
-  /* Card styles */
+
+  .btn-lg {
+    @apply px-6 py-3 text-base;
+  }
+
+  /* Card styles - responsive padding */
   .card {
-    @apply bg-dark-card border border-dark-border rounded-2xl p-8 mb-6 shadow-dark backdrop-blur-lg;
+    @apply bg-dark-card border border-dark-border rounded-xl p-4 mb-4 shadow-dark backdrop-blur-lg;
   }
-  
-  /* Form styles */
+
+  @media (min-width: 640px) {
+    .card {
+      @apply rounded-2xl p-8 mb-6;
+    }
+  }
+
+  /* Form styles - mobile friendly inputs */
   .form-group {
-    @apply mb-5;
+    @apply mb-4;
   }
-  
+
+  @media (min-width: 640px) {
+    .form-group {
+      @apply mb-5;
+    }
+  }
+
   .form-control {
-    @apply w-full px-4 py-3 border-2 border-gray-600 rounded-lg text-sm transition-all duration-300 bg-gray-800/80 text-dark-text placeholder-dark-text-secondary;
+    @apply w-full px-3 py-2.5 border-2 border-gray-600 rounded-lg text-base transition-all duration-300 bg-gray-800/80 text-dark-text placeholder-dark-text-secondary min-h-[44px];
   }
-  
+
+  @media (min-width: 640px) {
+    .form-control {
+      @apply px-4 py-3 text-sm;
+    }
+  }
+
   .form-control:focus {
     @apply outline-none border-blue-500 shadow-[0_0_0_3px_rgba(59,130,246,0.2)] bg-gray-800/95;
   }
-  
+
   /* Status indicators */
   .status-dot {
     @apply w-3 h-3 rounded-full animate-pulse-slow;
   }
-  
+
   .status-dot.connected {
     @apply bg-accent-green shadow-glow-green;
   }
-  
+
   .status-dot.disconnected {
     @apply bg-accent-red shadow-glow-red;
   }
-  
+
   /* Review styles */
   .review-item {
-    @apply border-2 border-gray-600 rounded-xl p-5 mb-4 transition-all duration-300 bg-gray-800/50;
+    @apply border-2 border-gray-600 rounded-xl p-4 mb-3 transition-all duration-300 bg-gray-800/50;
   }
-  
+
+  @media (min-width: 640px) {
+    .review-item {
+      @apply p-5 mb-4;
+    }
+  }
+
   .review-item:hover {
     @apply border-blue-500 shadow-[0_4px_20px_rgba(59,130,246,0.2)];
   }
-  
+
   .review-item.urgent {
     @apply border-red-500 bg-red-500/10;
   }
-  
+
   .review-item.negative {
     @apply border-l-4 border-l-red-500;
   }
-  
+
   .review-item.positive {
     @apply border-l-4 border-l-green-500;
   }
-  
+
   .review-item.mixed {
     @apply border-l-4 border-l-yellow-500;
   }
-  
+
   .review-item.selected-for-bulk {
     @apply bg-blue-500/10 border-blue-500;
   }
-  
+
   /* Activity log */
   .activity-item {
     @apply p-3 border-l-4 border-l-blue-500 bg-gray-800/50 mb-3 rounded-r-lg;
   }
-  
+
   .activity-item.success {
     @apply border-l-green-500 bg-green-500/10;
   }
-  
+
   .activity-item.error {
     @apply border-l-red-500 bg-red-500/10;
   }
-  
+
   .activity-item.warning {
     @apply border-l-yellow-500 bg-yellow-500/10;
   }
-  
-  /* Modal styles */
+
+  /* Modal styles - mobile-first full screen on small devices */
   .modal {
-    @apply fixed inset-0 bg-black/70 flex justify-center items-center z-50 backdrop-blur-sm;
+    @apply fixed inset-0 bg-black/70 flex justify-center items-end z-50 backdrop-blur-sm;
   }
-  
+
+  @media (min-width: 640px) {
+    .modal {
+      @apply items-center;
+    }
+  }
+
   .modal-content {
-    @apply bg-slate-800 border border-gray-600 rounded-2xl w-11/12 max-w-2xl max-h-[80vh] overflow-y-auto shadow-dark-lg;
+    @apply bg-slate-800 border border-gray-600 rounded-t-2xl w-full max-h-[90vh] overflow-y-auto shadow-dark-lg;
   }
-  
-  /* Collapsible sections */
+
+  @media (min-width: 640px) {
+    .modal-content {
+      @apply rounded-2xl w-11/12 max-w-2xl max-h-[80vh];
+    }
+  }
+
+  /* Collapsible sections - mobile-friendly touch targets */
   .section-header {
-    @apply flex justify-between items-center cursor-pointer py-5 border-b-2 border-dark-border mb-5 transition-all duration-300 select-none;
+    @apply flex justify-between items-center cursor-pointer py-4 border-b-2 border-dark-border mb-4 transition-all duration-300 select-none gap-3;
   }
-  
+
+  @media (min-width: 640px) {
+    .section-header {
+      @apply py-5 mb-5;
+    }
+  }
+
   .section-header:hover {
-    @apply bg-blue-500/10 -mx-8 px-8 rounded-lg;
+    @apply bg-blue-500/10 -mx-4 px-4 rounded-lg;
   }
-  
+
+  @media (min-width: 640px) {
+    .section-header:hover {
+      @apply -mx-8 px-8;
+    }
+  }
+
+  .section-header:active {
+    @apply bg-blue-500/15;
+  }
+
   .section-header:hover h2 {
     @apply text-blue-300;
   }
-  
+
   .section-header:hover .collapse-icon {
     @apply text-blue-300 scale-110;
   }
-  
+
   .collapse-icon {
-    @apply text-xl text-dark-text-secondary transition-all duration-300 font-bold;
+    @apply text-xl text-dark-text-secondary transition-all duration-300 font-bold flex-shrink-0;
   }
-  
+
   .section-header.collapsed .collapse-icon {
     @apply -rotate-90;
   }
-  
+
   .section-content {
     @apply transition-all duration-300 overflow-hidden;
   }
-  
+
   .section-content.collapsed {
     @apply max-h-0 opacity-0 my-0 py-0;
   }
-  
+
   .section-content.expanding {
     @apply animate-slide-down;
   }
-  
+
   .section-content.collapsing {
     @apply animate-slide-up;
   }
-  
+
   /* AI generating animation */
   .ai-generating {
     @apply opacity-60 pointer-events-none;
   }
-  
+
   .btn-ai-generating {
     @apply bg-gradient-to-r from-blue-500 via-blue-700 to-blue-500 bg-[length:200%_100%] animate-shimmer;
   }
-  
+
   /* Platform specific styles */
   .platform-item.facebook {
     @apply border-l-4 border-l-[#1877f2];
   }
-  
+
   .platform-item.instagram {
     @apply border-l-4 border-l-[#e4405f];
   }
-  
+
   .platform-item.twitter {
     @apply border-l-4 border-l-[#1d9bf0];
   }
-  
+
   /* Status badges */
   .status-badge {
     @apply px-2 py-1 rounded-full text-xs font-semibold;
   }
-  
+
   .status-badge.connected {
     @apply bg-green-500/20 text-green-300;
   }
-  
+
   .status-badge.not-connected {
     @apply bg-red-500/20 text-red-300;
   }
-  
+
   /* Scrollbar styles */
   ::-webkit-scrollbar {
     @apply w-2;
   }
-  
+
   ::-webkit-scrollbar-track {
     @apply bg-slate-800;
   }
-  
+
   ::-webkit-scrollbar-thumb {
     @apply bg-slate-600 rounded;
   }
-  
+
   ::-webkit-scrollbar-thumb:hover {
     @apply bg-slate-500;
+  }
+
+  /* Checkbox - proper touch target on mobile */
+  input[type="checkbox"] {
+    @apply min-w-[18px] min-h-[18px];
   }
 }
 
 @layer utilities {
   .text-shadow {
     text-shadow: 0 0 20px rgba(96, 165, 250, 0.3);
+  }
+
+  /* Safe area insets for notched devices */
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0);
   }
 }

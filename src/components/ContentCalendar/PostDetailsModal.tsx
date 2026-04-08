@@ -63,10 +63,10 @@ export default function PostDetailsModal({
   const isOverLimit = characterCount > platformInfo.limit
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 rounded-lg border border-gray-600 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50 sm:p-4">
+      <div className="bg-slate-800 rounded-t-xl sm:rounded-lg border border-gray-600 w-full sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-600">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-gray-600">
           <div className="flex items-center gap-3">
             <span className="text-2xl">{platformInfo.icon}</span>
             <div>

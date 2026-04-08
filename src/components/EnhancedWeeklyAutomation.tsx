@@ -419,7 +419,7 @@ export default function EnhancedWeeklyAutomation() {
       <div className="space-y-8">
 
         {/* Timeframe Selection */}
-        <div className="bg-slate-800/30 rounded-lg p-6">
+        <div className="bg-slate-800/30 rounded-lg p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-dark-text mb-4">Generation Timeframe</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
             {TIMEFRAME_OPTIONS.map(option => (
@@ -457,7 +457,7 @@ export default function EnhancedWeeklyAutomation() {
         </div>
 
         {/* Business Selection - Dynamic from Database */}
-        <div className="bg-slate-800/30 rounded-lg p-6">
+        <div className="bg-slate-800/30 rounded-lg p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-dark-text mb-4">Select Businesses</h3>
           {loadingBusinesses ? (
             <div className="text-dark-text-muted">Loading businesses...</div>
@@ -486,7 +486,7 @@ export default function EnhancedWeeklyAutomation() {
         </div>
 
         {/* Platform Selection */}
-        <div className="bg-slate-800/30 rounded-lg p-6">
+        <div className="bg-slate-800/30 rounded-lg p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-dark-text mb-4">Select Platforms</h3>
 
           <div className="mb-4 p-4 bg-slate-700/30 rounded-lg">
@@ -526,7 +526,7 @@ export default function EnhancedWeeklyAutomation() {
         </div>
 
         {/* Content Options */}
-        <div className="bg-slate-800/30 rounded-lg p-6">
+        <div className="bg-slate-800/30 rounded-lg p-4 sm:p-6">
           <h3 className="text-lg font-semibold text-dark-text mb-4">Content Options</h3>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <label className="flex items-center gap-3 p-3 bg-slate-700/50 rounded-lg cursor-pointer">
@@ -611,7 +611,7 @@ export default function EnhancedWeeklyAutomation() {
 
         {/* Generated Content */}
         {weeklyPosts.length > 0 && (
-          <div className="bg-slate-800/30 rounded-lg p-6">
+          <div className="bg-slate-800/30 rounded-lg p-4 sm:p-6">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-semibold text-dark-text">Generated Content</h3>
               <div className="flex gap-2">

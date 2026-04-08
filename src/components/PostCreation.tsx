@@ -713,7 +713,7 @@ export default function EnhancedPostCreation() {
                   {suggestedImages.length > 0 && (
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-green-400">🎯 Suggested for your content:</p>
-                      <div className="grid grid-cols-6 gap-2">
+                      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                         {suggestedImages.map(img => (
                           <div key={`suggested-${img.id}`} className="relative group cursor-pointer">
                             <img
@@ -736,7 +736,7 @@ export default function EnhancedPostCreation() {
 
                   {/* All Images Grid */}
                   {libraryImages.length > 0 ? (
-                    <div className="grid grid-cols-6 gap-2 max-h-64 overflow-y-auto">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-64 overflow-y-auto">
                       {libraryImages
                         .filter(img => {
                           const matchesSearch = !imageSearch || 

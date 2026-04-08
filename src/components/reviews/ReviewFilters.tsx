@@ -20,12 +20,12 @@ export default function ReviewFilters({
   loadingLocations 
 }: ReviewFiltersProps) {
   return (
-    <div className="flex flex-wrap gap-3">
+    <div className="flex flex-col sm:flex-row flex-wrap gap-3">
       {/* Location Filter */}
       <select
         value={filters.location}
         onChange={(e) => onFiltersChange({ ...filters, location: e.target.value })}
-        className="form-control max-w-xs"
+        className="form-control w-full sm:max-w-xs"
         disabled={loadingLocations}
       >
         <option value="all">
@@ -42,7 +42,7 @@ export default function ReviewFilters({
       <select
         value={filters.status}
         onChange={(e) => onFiltersChange({ ...filters, status: e.target.value })}
-        className="form-control max-w-xs"
+        className="form-control w-full sm:max-w-xs"
       >
         <option value="all">All Reviews</option>
         <option value="unresponded">Needs Response</option>

@@ -661,8 +661,8 @@ export default function MonthlySpecialsManager() {
 
         {/* Editing Modal */}
         {editingSpecial && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-slate-800 rounded-lg p-6 max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-end sm:items-center justify-center z-50">
+            <div className="bg-slate-800 rounded-t-xl sm:rounded-lg p-4 sm:p-6 w-full sm:max-w-4xl sm:mx-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-semibold text-dark-text">
                   📅 {MONTHS[editingSpecial.month]} {editingSpecial.year} Specials

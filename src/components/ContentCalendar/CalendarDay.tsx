@@ -55,7 +55,7 @@ export default function CalendarDay({
 
   return (
     <div
-      className={`relative min-h-[120px] border-r border-b border-gray-600 p-2 cursor-pointer transition-colors ${
+      className={`relative min-h-[60px] sm:min-h-[120px] border-r border-b border-gray-600 p-1 sm:p-2 cursor-pointer transition-colors ${
         !isCurrentMonth
           ? 'bg-slate-900/20 text-gray-500'
           : isCurrentDay

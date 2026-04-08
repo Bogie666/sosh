@@ -2315,7 +2315,7 @@ const postNow = async (postId: string) => {
         {/* Enhanced Image Selector Modal */}
         {showImageSelector && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-slate-800 rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col">
+            <div className="bg-slate-800 rounded-t-lg sm:rounded-lg shadow-xl w-full sm:w-11/12 sm:max-w-6xl max-h-[95vh] sm:max-h-[90vh] flex flex-col">
               {/* Fixed Header */}
               <div className="flex justify-between items-center p-6 border-b border-slate-700 flex-shrink-0">
                 <h3 className="text-lg font-semibold text-white">Select Image</h3>
@@ -2371,7 +2371,7 @@ const postNow = async (postId: string) => {
                       {(post?.suggestedImageUrl || (post?.imageAlternatives && post.imageAlternatives.length > 0)) && (
                         <div>
                           <h4 className="text-md font-medium text-slate-300 mb-3">AI Suggested Images</h4>
-                          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
                             {allImages.filter(img => img.isCurrent || img.isAlternative).map((image: any, index: number) => (
                               <div 
                                 key={`ai-${index}`}
@@ -2414,7 +2414,7 @@ const postNow = async (postId: string) => {
                           </h4>
                           
                           {/* This is the key fix - proper grid with scrolling */}
-                          <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3 max-h-96 overflow-y-auto pr-2">
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-2 sm:gap-3 max-h-96 overflow-y-auto">
                             {availableImages.map((image: any, index: number) => (
                               <div 
                                 key={`lib-${image.id || index}`}

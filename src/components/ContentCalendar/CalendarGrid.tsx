@@ -25,7 +25,8 @@ interface CalendarGridProps {
   onDateClick: (date: Date) => void
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const WEEKDAYS_FULL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 export default function CalendarGrid({
   days,
@@ -69,12 +70,13 @@ export default function CalendarGrid({
     <div className="bg-slate-900/50 rounded-lg border border-gray-600 overflow-hidden">
       {/* Weekday Headers */}
       <div className="grid grid-cols-7 border-b border-gray-600">
-        {WEEKDAYS.map(day => (
+        {WEEKDAYS.map((day, i) => (
           <div
-            key={day}
-            className="p-3 text-center text-sm font-medium text-gray-300 bg-slate-800/50"
+            key={`${day}-${i}`}
+            className="p-1.5 sm:p-3 text-center text-xs sm:text-sm font-medium text-gray-300 bg-slate-800/50"
           >
-            {day}
+            <span className="sm:hidden">{day}</span>
+            <span className="hidden sm:inline">{WEEKDAYS_FULL[i]}</span>
           </div>
         ))}
       </div>

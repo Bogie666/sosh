@@ -40,7 +40,7 @@ export default function CollapsibleSection({
         className="section-header"
         onClick={toggleExpanded}
       >
-        <h2 className="text-xl font-semibold">{title}</h2>
+        <h2 className="text-base sm:text-xl font-semibold">{title}</h2>
         <ChevronDownIcon 
           className={`w-5 h-5 text-dark-text-muted transition-transform duration-300 ${
             isExpanded ? 'rotate-180' : ''

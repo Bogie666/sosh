@@ -20,14 +20,14 @@ export default async function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen p-5">
+    <div className="min-h-screen p-3 sm:p-5">
       <div className="max-w-7xl mx-auto">
         <Header />
         
         {/* Quick Navigation */}
-        <div className="bg-slate-900/30 rounded-lg p-6 mb-6 border border-slate-600/50">
-          <h2 className="text-lg font-semibold text-dark-text mb-4">🚀 Quick Actions</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-slate-900/30 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6 border border-slate-600/50">
+          <h2 className="text-lg font-semibold text-dark-text mb-3 sm:mb-4">Quick Actions</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
             <a 
               href="/calendar" 
               className="flex items-center gap-3 p-4 bg-slate-800/50 rounded-lg border border-slate-600 hover:border-blue-500 transition-all duration-200 hover:bg-slate-700/50 group"

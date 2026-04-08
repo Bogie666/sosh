@@ -22,7 +22,7 @@ export default function SignInForm() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-dark p-4">
       {/* Square container with logo inside */}
-      <div className="bg-dark-card border border-dark-border rounded-2xl p-8" style={{width: '400px', height: '400px', display: 'flex', flexDirection: 'column', justifyContent: 'center'}}>
+      <div className="bg-dark-card border border-dark-border rounded-2xl p-6 sm:p-8 w-full max-w-[400px] flex flex-col justify-center">
         <div className="space-y-6">
           {/* Logo and tagline at top of box */}
           <div className="text-center">

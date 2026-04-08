@@ -17,7 +17,7 @@ export default async function SettingsPage() {
   }
 
   return (
-    <div className="min-h-screen p-5">
+    <div className="min-h-screen p-3 sm:p-5">
       <div className="max-w-7xl mx-auto">
         <Header />
         
