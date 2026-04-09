@@ -221,7 +221,9 @@ Topic angle: ${dailyTheme.focus}
 Tone: ${dailyTheme.contentStyle}`)
   }
 
-  parts.push(`Season: ${season}`)
+  // Give the AI a variety of angles to choose from instead of always defaulting to season
+  const contentAngles = getContentAngleVariety(biz, season, req.day)
+  parts.push(`\n${contentAngles}`)
 
   if (req.postDate) {
     const d = new Date(req.postDate)
@@ -250,7 +252,7 @@ No specific monthly specials are set right now, so create general promotional co
 - Highlight the value and quality of ${biz.displayName}'s ${serviceList}
 - Emphasize what sets the business apart (reliability, expertise, speed, customer care)
 - Mention free estimates, financing options, or satisfaction guarantees if relevant
-- Create urgency around seasonal needs or preventive maintenance
+- Create urgency around why acting now matters (busy season, aging equipment, peace of mind)
 - Encourage the reader to call or book now${biz.tagline ? `\n- Reinforce the brand promise: "${biz.tagline}"` : ''}
 
 Keep it natural and compelling - sell the benefit, not the feature.`
@@ -357,4 +359,37 @@ function getSeason(month: number): string {
   if (month >= 5 && month <= 7) return 'Summer'
   if (month >= 8 && month <= 10) return 'Fall'
   return 'Winter'
+}
+
+/**
+ * Generate a varied content angle so posts don't all sound the same.
+ * Uses the day of week to rotate through different angles deterministically,
+ * so a batch of 5 posts gets 5 different approaches.
+ */
+function getContentAngleVariety(biz: BusinessContext, season: string, day: string): string {
+  const dayIndex = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+    .indexOf(day.toLowerCase())
+
+  // Pool of diverse content angles - the AI picks up on whichever one it gets
+  const angles = [
+    // Expertise & trust
+    `CONTENT ANGLE: Highlight what makes ${biz.displayName} the experts. Focus on experience, training, or a specific skill that builds trust. Do NOT mention the season.`,
+    // Customer benefit
+    `CONTENT ANGLE: Focus on a specific customer benefit or problem you solve. Paint a picture of the comfort, safety, or savings the customer gets. Season is ${season} but don't lead with it.`,
+    // Urgency / availability
+    `CONTENT ANGLE: Create a sense of urgency or timeliness - why should someone act now? Mention availability, response times, or limited capacity. Don't reference the season directly.`,
+    // Behind the scenes / team
+    `CONTENT ANGLE: Show the human side - the team, the work ethic, or what a typical day looks like. Make the reader feel connected to the people behind the business. No seasonal references needed.`,
+    // Education / tips
+    `CONTENT ANGLE: Share a genuinely useful tip or piece of advice the reader can act on. Position ${biz.displayName} as the knowledgeable resource. You may briefly reference ${season} weather if the tip is weather-related, but it shouldn't dominate the post.`,
+    // Social proof / results
+    `CONTENT ANGLE: Emphasize results, reliability, or reputation. Reference the kind of outcomes customers experience. Do NOT mention the season.`,
+    // Community / local
+    `CONTENT ANGLE: Connect with the local community. Reference serving the ${biz.serviceAreas.length > 0 ? biz.serviceAreas.slice(0, 2).join(' and ') : 'local'} area, being a neighbor, or community involvement. No seasonal angle.`
+  ]
+
+  // Use day index to pick an angle, cycling through the pool
+  const selectedAngle = angles[Math.abs(dayIndex) % angles.length]
+
+  return selectedAngle
 }
