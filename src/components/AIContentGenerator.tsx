@@ -544,29 +544,30 @@ export default function AIContentGenerator() {
   const getOptimalPostingTimes = (businessId: string, platform: string, startDate: Date) => {
     const schedule = postingSchedules[businessId]
     const platformSchedule = schedule?.platforms?.[platform]
-    
+    const now = new Date()
+
+    // Ensure we never schedule in the past - push to at least 30 min from now
+    const minTime = new Date(now.getTime() + 30 * 60 * 1000)
+
     if (!platformSchedule?.enabled || !platformSchedule.daysOfWeek?.length) {
-      console.log(`⚠️ No posting schedule found for ${businessId} on ${platform}, using default times`)
-      // Fallback to default times if no schedule configured
-      return [new Date(startDate.getTime() + (2 * 60 * 60 * 1000))] // 2 hours from start date
+      // Fallback: 2 hours from now or startDate, whichever is later
+      const fallback = new Date(Math.max(startDate.getTime(), minTime.getTime()) + (2 * 60 * 60 * 1000))
+      return [fallback]
     }
 
     const times: Date[] = []
-    const startDateCopy = new Date(startDate)
-    
-    // Get the times to post at
-    const postingTimes = platformSchedule.timeDistribution === 'custom' 
+
+    const postingTimes = platformSchedule.timeDistribution === 'custom'
       ? platformSchedule.customTimes || []
       : platformSchedule.autoTimes || ['09:00', '13:00', '17:00']
 
-    // If no times specified, use defaults
     if (postingTimes.length === 0) {
-      console.log(`⚠️ No posting times configured for ${businessId} on ${platform}, using defaults`)
-      return [new Date(startDate.getTime() + (2 * 60 * 60 * 1000))]
+      const fallback = new Date(Math.max(startDate.getTime(), minTime.getTime()) + (2 * 60 * 60 * 1000))
+      return [fallback]
     }
 
-    // Generate scheduled times for the next week
-    let currentDate = new Date(startDateCopy)
+    // Generate scheduled times, skipping any that are in the past
+    let currentDate = new Date(startDate)
     let daysGenerated = 0
     
     while (times.length < 10 && daysGenerated < 14) { // Generate up to 10 times, max 2 weeks out
@@ -594,11 +595,14 @@ export default function AIContentGenerator() {
       daysGenerated++
     }
 
-    // If we still don't have times, generate some defaults
+    // If we still don't have times (all were in the past), generate future defaults
     if (times.length === 0) {
       console.log(`⚠️ Could not generate posting times for ${businessId} on ${platform}, using fallback`)
-      const fallbackTime = new Date(startDate.getTime() + (2 * 60 * 60 * 1000))
-      times.push(fallbackTime)
+      // Start from tomorrow 9 AM if today's times have all passed
+      const tomorrow9am = new Date()
+      tomorrow9am.setDate(tomorrow9am.getDate() + 1)
+      tomorrow9am.setHours(9, 0, 0, 0)
+      times.push(tomorrow9am)
     }
 
     console.log(`📅 Generated ${times.length} optimal posting times for ${businessId} on ${platform}`)

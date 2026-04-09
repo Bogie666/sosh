@@ -122,6 +122,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: successCount > 0,
+      error: successCount === 0 && errorCount > 0
+        ? `All ${errorCount} posts failed to schedule: ${errors.slice(0, 3).join('; ')}`
+        : undefined,
       results: {
         scheduled: results,
         errors: errors,
@@ -131,7 +134,7 @@ export async function POST(request: NextRequest) {
           failed: errorCount
         }
       },
-      message: errorCount === 0 
+      message: errorCount === 0
         ? `All ${successCount} posts scheduled successfully!`
         : `${successCount} posts scheduled, ${errorCount} failed`
     })
