@@ -240,7 +240,21 @@ Tone: ${dailyTheme.contentStyle}`)
 
 function buildSpecialsSection(ctx: FullBusinessContext, req: ContentGenerationRequest): string | null {
   const specials = getSpecialsForMonth(ctx, req.month, req.serviceTypeFocus)
-  if (specials.length === 0) return null
+
+  if (specials.length === 0) {
+    // No specials configured - give the AI general promotional guidance instead
+    const biz = ctx.business
+    const serviceList = biz.serviceTypes.length > 0 ? biz.serviceTypes.join(', ') : 'our services'
+    return `PROMOTIONAL ANGLE:
+No specific monthly specials are set right now, so create general promotional content. Ideas:
+- Highlight the value and quality of ${biz.displayName}'s ${serviceList}
+- Emphasize what sets the business apart (reliability, expertise, speed, customer care)
+- Mention free estimates, financing options, or satisfaction guarantees if relevant
+- Create urgency around seasonal needs or preventive maintenance
+- Encourage the reader to call or book now${biz.tagline ? `\n- Reinforce the brand promise: "${biz.tagline}"` : ''}
+
+Keep it natural and compelling - sell the benefit, not the feature.`
+  }
 
   // Pick 1-2 specials, rotating based on day to avoid repetition
   const dayIndex = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(req.day.toLowerCase())
