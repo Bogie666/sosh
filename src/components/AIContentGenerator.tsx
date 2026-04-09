@@ -13,17 +13,6 @@ const PLATFORMS = [
   { id: 'twitter', name: 'X/Twitter', icon: '🐦', color: 'text-sky-400', charLimit: 280, sweet: '240-270' }
 ]
 
-// Templates available
-const AVAILABLE_TEMPLATES = [
-  { id: 'seasonal_tip', name: 'Seasonal Tips', description: 'Weather-appropriate tips and advice', category: 'Educational' },
-  { id: 'maintenance_reminder', name: 'Maintenance Reminders', description: 'Regular service and tune-up reminders', category: 'Service' },
-  { id: 'weather_alert', name: 'Weather Alerts', description: 'Weather-related protection tips', category: 'Urgent' },
-  { id: 'promotion', name: 'Special Promotions', description: 'Service promotions and special offers', category: 'Marketing' },
-  { id: 'customer_story', name: 'Customer Success Stories', description: 'Testimonials and positive reviews', category: 'Social Proof' },
-  { id: 'company_update', name: 'Company News', description: 'Business updates and announcements', category: 'Company' },
-  { id: 'emergency_service', name: 'Emergency Service', description: '24/7 emergency availability reminders', category: 'Service' }
-]
-
 // Daily themes
 const DAILY_THEMES: Record<string, { theme: string; focus: string; emoji: string }> = {
   monday: { theme: 'Monday Motivation', focus: 'Start week strong with energy and highlights', emoji: '💪' },
@@ -126,7 +115,7 @@ export default function AIContentGenerator() {
   // Selection state
   const [selectedBusinesses, setSelectedBusinesses] = useState<string[]>([])
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['facebook'])
-  const [selectedTemplates, setSelectedTemplates] = useState<string[]>(['seasonal_tip', 'maintenance_reminder', 'promotion'])
+  const [selectedTemplates] = useState<string[]>([]) // Legacy - kept for type compat
   
   // UPDATED: Strategic timeframe selection
   const [selectedTimeframe, setSelectedTimeframe] = useState('1-week')
@@ -229,7 +218,7 @@ export default function AIContentGenerator() {
       
       setCapabilities({
         isConfigured: data.success,
-        availableTemplates: AVAILABLE_TEMPLATES,
+        availableTemplates: [],
         supportedPlatforms: PLATFORMS,
         supportedBusinesses: dynamicBusinesses
       })
@@ -1904,39 +1893,6 @@ const postNow = async (postId: string) => {
                   </label>
                 ))}
               </div>
-            </div>
-          </div>
-
-          {/* Template Selection */}
-          <div className="mt-6">
-            <label className="block text-dark-text-secondary text-sm mb-3">
-              Content Templates
-            </label>
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-              {AVAILABLE_TEMPLATES.map(template => (
-                <label key={template.id} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={selectedTemplates.includes(template.id)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedTemplates(prev => [...prev, template.id])
-                      } else {
-                        setSelectedTemplates(prev => prev.filter(id => id !== template.id))
-                      }
-                    }}
-                    className="checkbox-dark"
-                  />
-                  <div>
-                    <span className="text-sm font-medium text-dark-text">
-                      {template.name}
-                    </span>
-                    <div className="text-xs text-dark-text-muted">
-                      {template.description}
-                    </div>
-                  </div>
-                </label>
-              ))}
             </div>
           </div>
 

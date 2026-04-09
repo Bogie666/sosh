@@ -33,16 +33,6 @@ export async function GET() {
       }
     }))
 
-    const availableTemplates = [
-      { id: 'seasonal_tip', name: 'Seasonal Tips', description: 'Weather-appropriate tips and advice', category: 'Educational', frequency: 'Weekly' },
-      { id: 'maintenance_reminder', name: 'Maintenance Reminders', description: 'Regular service reminders', category: 'Service', frequency: 'Monthly' },
-      { id: 'weather_alert', name: 'Weather Alerts', description: 'Weather-related protection tips', category: 'Urgent', frequency: 'As needed' },
-      { id: 'promotion', name: 'Special Promotions', description: 'Promotions and special offers', category: 'Marketing', frequency: 'Monthly' },
-      { id: 'customer_story', name: 'Customer Stories', description: 'Testimonials and reviews', category: 'Social Proof', frequency: 'Weekly' },
-      { id: 'company_update', name: 'Company News', description: 'Business updates', category: 'Company', frequency: 'As needed' },
-      { id: 'emergency_service', name: 'Emergency Service', description: '24/7 availability reminders', category: 'Service', frequency: 'Monthly' }
-    ]
-
     const currentMonth = new Date().getMonth()
 
     return NextResponse.json({
@@ -50,7 +40,7 @@ export async function GET() {
       capabilities: {
         isConfigured,
         currentSeason: getSeason(currentMonth),
-        availableTemplates,
+        availableTemplates: [],
         supportedPlatforms,
         supportedBusinesses,
         features: {
