@@ -106,14 +106,24 @@ export async function PUT(
       }
     }
 
+    // Extract aiGuidelines (stored in autoPostSettings JSON, not a top-level column)
+    const { aiGuidelines, ...rest } = updates
+
     // Ensure arrays are properly formatted
     const profileData = {
-      ...updates,
-      certifications: Array.isArray(updates.certifications) ? updates.certifications.filter(Boolean) : [],
-      serviceAreas: Array.isArray(updates.serviceAreas) ? updates.serviceAreas.filter(Boolean) : [],
-      serviceTypes: Array.isArray(updates.serviceTypes) ? updates.serviceTypes : [],
-      contentThemes: Array.isArray(updates.contentThemes) ? updates.contentThemes : [],
-      approvedTemplates: Array.isArray(updates.approvedTemplates) ? updates.approvedTemplates : []
+      ...rest,
+      certifications: Array.isArray(rest.certifications) ? rest.certifications.filter(Boolean) : [],
+      serviceAreas: Array.isArray(rest.serviceAreas) ? rest.serviceAreas.filter(Boolean) : [],
+      serviceTypes: Array.isArray(rest.serviceTypes) ? rest.serviceTypes : [],
+      contentThemes: Array.isArray(rest.contentThemes) ? rest.contentThemes : [],
+      approvedTemplates: Array.isArray(rest.approvedTemplates) ? rest.approvedTemplates : []
+    }
+
+    // If aiGuidelines was provided, merge into autoPostSettings
+    if (aiGuidelines !== undefined) {
+      const existingProfile = await prisma.businessProfile.findUnique({ where: { businessId } })
+      const currentAutoPost = (existingProfile?.autoPostSettings as any) || {}
+      profileData.autoPostSettings = { ...currentAutoPost, aiGuidelines }
     }
 
     // Update or create business profile

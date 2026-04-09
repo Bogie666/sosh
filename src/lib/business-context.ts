@@ -26,6 +26,7 @@ export interface BusinessContext {
   seasonalSettings: Record<string, any> | null
   holidaySettings: Record<string, any> | null
   postingSchedule: Record<string, any> | null
+  aiGuidelines: string
 }
 
 export interface ContentBlockSet {
@@ -148,6 +149,7 @@ export async function loadBusinessContext(businessId: string): Promise<FullBusin
       seasonalSettings: profile?.seasonalSettings as Record<string, any> | null,
       holidaySettings: profile?.holidaySettings as Record<string, any> | null,
       postingSchedule: profile?.postingSchedule as Record<string, any> | null,
+      aiGuidelines: ((profile?.autoPostSettings as any)?.aiGuidelines) || '',
     },
     contentBlocks: organizeBlocks(contentBlocks),
     monthlySpecials: specials.map((s: any) => ({

@@ -78,6 +78,9 @@ export default function BusinessProfileManager() {
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
+  // AI Guidelines (stored in autoPostSettings, separate from profile)
+  const [aiGuidelines, setAiGuidelines] = useState('')
+
   // New business form
   const [showNewBusinessForm, setShowNewBusinessForm] = useState(false)
   const [newBusiness, setNewBusiness] = useState({ name: '', displayName: '', type: 'all', phone: '', website: '', tagline: '', brandVoice: '' })
@@ -117,7 +120,11 @@ export default function BusinessProfileManager() {
     try {
       const response = await fetch(`/api/businesses/${businessId}/profile`)
       const data = await response.json()
-      if (data.success) setProfile(data.profile)
+      if (data.success) {
+        setProfile(data.profile)
+        // Load AI guidelines from autoPostSettings
+        setAiGuidelines(data.profile?.autoPostSettings?.aiGuidelines || '')
+      }
     } catch { showMessage('error', 'Failed to load profile') }
     finally { setLoading(false) }
   }
@@ -137,7 +144,7 @@ export default function BusinessProfileManager() {
       const response = await fetch(`/api/businesses/${selectedBusiness}/profile`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(profile)
+        body: JSON.stringify({ ...profile, aiGuidelines })
       })
       const data = await response.json()
       if (data.success) {
@@ -390,6 +397,18 @@ export default function BusinessProfileManager() {
               <button onClick={saveProfile} disabled={saving} className="btn btn-success">
                 {saving ? 'Saving...' : 'Save Profile'}
               </button>
+            </div>
+
+            {/* AI Guidelines */}
+            <div className="bg-slate-700/20 rounded-lg p-4 border border-slate-600/30">
+              <h4 className="font-medium text-dark-text mb-2">AI Content Guidelines</h4>
+              <p className="text-xs text-dark-text-muted mb-3">Custom rules the AI will follow when generating content for this business. These are injected into every prompt.</p>
+              <textarea
+                value={aiGuidelines}
+                onChange={(e) => setAiGuidelines(e.target.value)}
+                placeholder={"Examples:\n- Don't use emojis\n- Never mention seasonal weather\n- Always include a call-to-action with the phone number\n- Keep posts under 3 sentences\n- Never use the word \"expertise\""}
+                className="form-control min-h-[100px]"
+              />
             </div>
 
             {/* Brand Voice & Messaging */}

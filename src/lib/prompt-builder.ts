@@ -199,6 +199,12 @@ Writing style: ${biz.messageStyle || 'professional'}`)
 7. Create content that is ready to publish immediately
 8. Do NOT mention the day of the week in the post unless it's truly natural and relevant. The content themes below are internal guidance for you, not text to include in the post.`)
 
+  // Inject user-defined AI guidelines if set
+  if (biz.aiGuidelines && biz.aiGuidelines.trim()) {
+    parts.push(`\nADDITIONAL BUSINESS GUIDELINES (follow these strictly):
+${biz.aiGuidelines.trim()}`)
+  }
+
   return parts.join('\n')
 }
 
