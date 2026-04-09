@@ -58,12 +58,20 @@ export async function POST(request: NextRequest) {
 
     // Ensure user exists in database (Prisma adapter is disabled, so users
     // aren't auto-created on sign-in. We need the record for the FK.)
-    const userId = session.user.id
-    await prisma.user.upsert({
-      where: { id: userId },
-      update: { name: session.user.name, email: session.user.email || '', image: session.user.image },
-      create: { id: userId, name: session.user.name, email: session.user.email || '', image: session.user.image }
-    })
+    // Look up by email first to avoid unique constraint violations, then by ID.
+    let userId = session.user.id
+    const email = session.user.email || ''
+    const existingByEmail = email ? await prisma.user.findUnique({ where: { email } }) : null
+    if (existingByEmail) {
+      userId = existingByEmail.id
+    } else {
+      const existingById = await prisma.user.findUnique({ where: { id: userId } })
+      if (!existingById) {
+        await prisma.user.create({
+          data: { id: userId, name: session.user.name, email, image: session.user.image }
+        })
+      }
+    }
 
     // Create scheduled post in database
     const scheduledPost = await prisma.scheduledPost.create({
