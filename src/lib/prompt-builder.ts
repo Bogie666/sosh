@@ -196,7 +196,8 @@ Writing style: ${biz.messageStyle || 'professional'}`)
 4. Never add suggestions like "Feel free to adjust..."
 5. Include real contact information naturally when appropriate
 6. Every post should reflect the brand voice described above
-7. Create content that is ready to publish immediately`)
+7. Create content that is ready to publish immediately
+8. Do NOT mention the day of the week in the post unless it's truly natural and relevant. The content themes below are internal guidance for you, not text to include in the post.`)
 
   return parts.join('\n')
 }
@@ -214,16 +215,17 @@ function buildCoreRequest(
   }
 
   if (dailyTheme) {
-    parts.push(`\nContent theme: ${dailyTheme.theme} ${dailyTheme.emoji}
-Focus: ${dailyTheme.focus}
-Style: ${dailyTheme.contentStyle}`)
+    // Frame themes as internal direction, not content to include
+    parts.push(`\nINTERNAL CONTENT DIRECTION (do not put these labels in the post):
+Topic angle: ${dailyTheme.focus}
+Tone: ${dailyTheme.contentStyle}`)
   }
 
   parts.push(`Season: ${season}`)
 
   if (req.postDate) {
     const d = new Date(req.postDate)
-    parts.push(`Post date: ${d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}`)
+    parts.push(`Post date: ${d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`)
   }
 
   // Business identity
