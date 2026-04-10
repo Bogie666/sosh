@@ -75,6 +75,13 @@ export interface CustomDailyTheme {
   contentStyle: string
 }
 
+export interface ContentStrategy {
+  contentStrategy: 'conservative' | 'balanced' | 'aggressive'
+  enabledDays: string[]
+  promotionFocus: { primary: string; secondary: string }
+  seasonalAdjustments: boolean
+}
+
 export interface FullBusinessContext {
   business: BusinessContext
   contentBlocks: ContentBlockSet
@@ -82,6 +89,7 @@ export interface FullBusinessContext {
   images: ImageAsset[]
   recentPostThemes: string[]
   customDailyThemes: Record<string, CustomDailyTheme> | null
+  contentStrategy: ContentStrategy | null
 }
 
 // Cache with TTL
@@ -175,7 +183,8 @@ export async function loadBusinessContext(businessId: string): Promise<FullBusin
       originalName: img.originalName
     })),
     recentPostThemes: extractRecentThemes(recentPosts.map((p: any) => p.content)),
-    customDailyThemes: extractCustomThemes(profile)
+    customDailyThemes: extractCustomThemes(profile),
+    contentStrategy: extractContentStrategy(profile)
   }
 
   contextCache.set(businessId, { data: ctx, expires: Date.now() + CACHE_TTL })
@@ -304,7 +313,18 @@ function extractCustomThemes(profile: any): Record<string, CustomDailyTheme> | n
   const settings = profile.autoPostSettings as any
   const customThemes = settings?.dailyThemeSettings?.customThemes
   if (!customThemes || typeof customThemes !== 'object') return null
-  // Only return if at least one theme has been customized
   if (Object.keys(customThemes).length === 0) return null
   return customThemes
+}
+
+function extractContentStrategy(profile: any): ContentStrategy | null {
+  if (!profile?.autoPostSettings) return null
+  const dts = (profile.autoPostSettings as any)?.dailyThemeSettings
+  if (!dts) return null
+  return {
+    contentStrategy: dts.contentStrategy || 'balanced',
+    enabledDays: dts.enabledDays || ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+    promotionFocus: dts.promotionFocus || { primary: 'wednesday', secondary: 'monday' },
+    seasonalAdjustments: dts.seasonalAdjustments ?? true
+  }
 }

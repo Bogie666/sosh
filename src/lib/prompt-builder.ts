@@ -5,6 +5,7 @@
 import {
   FullBusinessContext,
   BusinessContext,
+  ContentStrategy,
   getSpecialsForMonth,
   ImageAsset
 } from './business-context'
@@ -46,13 +47,19 @@ export function buildContentPrompt(
 ): PromptParts {
   const biz = ctx.business
   const spec = getPlatformSpec(req.platform)
+  const strategy = ctx.contentStrategy
+  const dayLower = req.day.toLowerCase()
+
   // Use custom daily theme from business settings if available, else fall back to defaults
-  const customTheme = ctx.customDailyThemes?.[req.day.toLowerCase()]
+  const customTheme = ctx.customDailyThemes?.[dayLower]
   const defaultTheme = DailyThemeService.getDailyTheme(req.day)
   const dailyTheme = customTheme
     ? { theme: customTheme.theme, focus: customTheme.focus, emoji: customTheme.emoji, contentStyle: customTheme.contentStyle, templates: defaultTheme?.templates || [], description: customTheme.focus, promotionWeight: defaultTheme?.promotionWeight || 50 }
     : defaultTheme
   const season = getSeason(req.month)
+
+  // Determine content type for this day based on strategy settings
+  const dayContentType = getDayContentType(dayLower, strategy)
 
   // --- System prompt: shaped by the business's actual voice ---
   const systemPrompt = buildSystemPrompt(biz)
@@ -60,16 +67,19 @@ export function buildContentPrompt(
   // --- User prompt: the specific content request ---
   const sections: string[] = []
 
-  // 1. Core request
-  sections.push(buildCoreRequest(biz, req, dailyTheme, season))
+  // 1. Core request - now strategy-aware
+  sections.push(buildCoreRequest(biz, req, dailyTheme, season, dayContentType))
 
   // 2. Platform requirements
   sections.push(getPlatformSpecsForPrompt(req.platform))
 
-  // 3. Monthly specials
-  if (req.includeSpecials) {
-    const specialsSection = buildSpecialsSection(ctx, req)
+  // 3. Monthly specials - ONLY on promotional days per strategy
+  if (req.includeSpecials && dayContentType.includeSpecials) {
+    const specialsSection = buildSpecialsSection(ctx, req, dayContentType.serviceTypeFocus)
     if (specialsSection) sections.push(specialsSection)
+  } else if (req.includeSpecials && !dayContentType.includeSpecials) {
+    // Not a promo day - tell the AI explicitly NOT to be promotional
+    sections.push(`CONTENT NOTE: This is NOT a promotional day. Focus on ${dayContentType.focus} instead. Do not mention specials, deals, discounts, or pricing.`)
   }
 
   // 4. Content blocks (contact info, CTAs, etc.)
@@ -159,6 +169,85 @@ Write ONLY the response text. No labels, headers, or metadata.`
   }
 }
 
+// --- Strategy-aware content type selection ---
+
+interface DayContentType {
+  type: 'promotional' | 'educational' | 'community' | 'trust' | 'engagement'
+  focus: string
+  includeSpecials: boolean
+  serviceTypeFocus?: string // Which service type to focus specials on
+}
+
+/**
+ * Determine what kind of content to create for this day based on the
+ * business's content strategy settings. If no strategy is configured,
+ * falls back to a sensible default distribution.
+ */
+function getDayContentType(day: string, strategy: ContentStrategy | null): DayContentType {
+  const isPrimaryPromoDay = strategy?.promotionFocus?.primary === day
+  const isSecondaryPromoDay = strategy?.promotionFocus?.secondary === day
+  const strat = strategy?.contentStrategy || 'balanced'
+
+  // Service type rotation for specials - cycle through so not every promo day
+  // pushes the same service type
+  const serviceTypes = ['hvac', 'plumbing', 'electrical']
+  const dayIndex = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(day)
+  const rotatedServiceType = serviceTypes[dayIndex % serviceTypes.length]
+
+  // Primary promo day - always promotional regardless of strategy
+  if (isPrimaryPromoDay) {
+    return {
+      type: 'promotional',
+      focus: 'featured specials, deals, and limited-time offers',
+      includeSpecials: true,
+      serviceTypeFocus: rotatedServiceType
+    }
+  }
+
+  // Secondary promo day - promotional but softer
+  if (isSecondaryPromoDay) {
+    return {
+      type: 'promotional',
+      focus: 'value and savings opportunities, soft promotion',
+      includeSpecials: true,
+      serviceTypeFocus: serviceTypes[(dayIndex + 1) % serviceTypes.length]
+    }
+  }
+
+  // Non-promo days - vary by strategy
+  if (strat === 'aggressive') {
+    // Aggressive: most days are promotional
+    const aggressiveTypes: DayContentType[] = [
+      { type: 'promotional', focus: 'urgency and limited availability', includeSpecials: true, serviceTypeFocus: rotatedServiceType },
+      { type: 'trust', focus: 'results, reputation, and why customers choose us', includeSpecials: false },
+      { type: 'promotional', focus: 'value proposition and competitive advantage', includeSpecials: true, serviceTypeFocus: rotatedServiceType },
+    ]
+    return aggressiveTypes[dayIndex % aggressiveTypes.length]
+  }
+
+  if (strat === 'conservative') {
+    // Conservative: mostly educational, rarely promotional
+    const conservativeTypes: DayContentType[] = [
+      { type: 'educational', focus: 'helpful tips and expert advice the reader can use today', includeSpecials: false },
+      { type: 'trust', focus: 'expertise, experience, and what makes us reliable', includeSpecials: false },
+      { type: 'community', focus: 'local community, being a good neighbor, serving the area', includeSpecials: false },
+      { type: 'educational', focus: 'maintenance advice and preventive care', includeSpecials: false },
+      { type: 'engagement', focus: 'asking a question or sharing something relatable', includeSpecials: false },
+    ]
+    return conservativeTypes[dayIndex % conservativeTypes.length]
+  }
+
+  // Balanced (default): mix of everything
+  const balancedTypes: DayContentType[] = [
+    { type: 'trust', focus: 'expertise, reliability, and track record', includeSpecials: false },
+    { type: 'educational', focus: 'practical tips and useful knowledge', includeSpecials: false },
+    { type: 'engagement', focus: 'connecting with the audience, asking questions, being relatable', includeSpecials: false },
+    { type: 'community', focus: 'local community connection and being a trusted neighbor', includeSpecials: false },
+    { type: 'educational', focus: 'maintenance advice and how to protect your home', includeSpecials: false },
+  ]
+  return balancedTypes[dayIndex % balancedTypes.length]
+}
+
 // --- Internal prompt section builders ---
 
 function buildSystemPrompt(biz: BusinessContext): string {
@@ -212,7 +301,8 @@ function buildCoreRequest(
   biz: BusinessContext,
   req: ContentGenerationRequest,
   dailyTheme: any,
-  season: string
+  season: string,
+  dayContentType?: DayContentType
 ): string {
   const parts = [`Create a ${req.platform} post for ${biz.displayName}.`]
 
@@ -220,14 +310,17 @@ function buildCoreRequest(
     parts.push(`\nSpecific request: ${req.customPrompt}`)
   }
 
-  if (dailyTheme) {
-    // Frame themes as internal direction, not content to include
-    parts.push(`\nINTERNAL CONTENT DIRECTION (do not put these labels in the post):
-Topic angle: ${dailyTheme.focus}
-Tone: ${dailyTheme.contentStyle}`)
+  // Strategy-driven content direction takes priority
+  if (dayContentType) {
+    parts.push(`\nCONTENT TYPE FOR THIS POST: ${dayContentType.type.toUpperCase()}
+Focus on: ${dayContentType.focus}`)
   }
 
-  // Give the AI a variety of angles to choose from instead of always defaulting to season
+  if (dailyTheme?.contentStyle) {
+    parts.push(`Tone: ${dailyTheme.contentStyle}`)
+  }
+
+  // Varied angle to prevent repetitive posts
   const contentAngles = getContentAngleVariety(biz, season, req.day)
   parts.push(`\n${contentAngles}`)
 
@@ -246,34 +339,32 @@ Tone: ${dailyTheme.contentStyle}`)
   return parts.join('\n')
 }
 
-function buildSpecialsSection(ctx: FullBusinessContext, req: ContentGenerationRequest): string | null {
-  const specials = getSpecialsForMonth(ctx, req.month, req.serviceTypeFocus)
+function buildSpecialsSection(ctx: FullBusinessContext, req: ContentGenerationRequest, serviceTypeFocus?: string): string | null {
+  // Use focused service type if provided by strategy, otherwise use request's
+  const focusType = serviceTypeFocus || req.serviceTypeFocus
+  const specials = getSpecialsForMonth(ctx, req.month, focusType)
 
   if (specials.length === 0) {
-    // No specials configured - give the AI general promotional guidance instead
     const biz = ctx.business
-    const serviceList = biz.serviceTypes.length > 0 ? biz.serviceTypes.join(', ') : 'our services'
+    const serviceLabel = focusType || (biz.serviceTypes.length > 0 ? biz.serviceTypes.join(', ') : 'our services')
     return `PROMOTIONAL ANGLE:
-No specific monthly specials are set right now, so create general promotional content. Ideas:
-- Highlight the value and quality of ${biz.displayName}'s ${serviceList}
+No specific monthly specials are set for ${serviceLabel}, so create general promotional content. Ideas:
+- Highlight the value and quality of ${biz.displayName}'s ${serviceLabel} services
 - Emphasize what sets the business apart (reliability, expertise, speed, customer care)
 - Mention free estimates, financing options, or satisfaction guarantees if relevant
-- Create urgency around why acting now matters (busy season, aging equipment, peace of mind)
+- Create urgency around why acting now matters
 - Encourage the reader to call or book now${biz.tagline ? `\n- Reinforce the brand promise: "${biz.tagline}"` : ''}
 
-Keep it natural and compelling - sell the benefit, not the feature.`
+Keep it natural - sell the benefit, not the feature. Focus on ONE specific service or value proposition, not everything at once.`
   }
 
-  // Pick 1-2 specials, rotating based on day to avoid repetition
+  // Pick just ONE special to feature - not a dump of everything
   const dayIndex = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(req.day.toLowerCase())
-  const startIndex = dayIndex >= 0 ? dayIndex % specials.length : 0
-  const selected = specials.slice(startIndex, startIndex + 2)
-  if (selected.length < 2 && specials.length > 1) {
-    selected.push(specials[(startIndex + 1) % specials.length])
-  }
+  const selectedIndex = dayIndex >= 0 ? dayIndex % specials.length : 0
+  const selected = specials[selectedIndex]
 
-  return `PROMOTIONAL SPECIALS - Include at least one naturally in the post:
-${selected.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+  return `FEATURED SPECIAL - Weave this ONE special naturally into the post:
+"${selected}"
 
 Weave the special into the content naturally - don't just paste it at the end. Make the reader feel they're getting an insider deal.`
 }
