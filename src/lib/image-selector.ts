@@ -128,6 +128,20 @@ function scoreImage(image: ImageAsset, content: string, day: string): ScoredImag
     reasons.push(`Category match: ${image.category}`)
   }
 
+  // 2b. Service type alignment - PENALIZE mismatches heavily
+  const contentServiceType = detectServiceType(contentLower)
+  const imageServiceType = detectServiceType([...allTags, description].join(' '))
+
+  if (contentServiceType && imageServiceType && contentServiceType !== imageServiceType) {
+    // Post is about HVAC but image shows plumbing (or vice versa) - big penalty
+    score -= 40
+    reasons.push(`Service mismatch (post: ${contentServiceType}, image: ${imageServiceType}): -40`)
+  } else if (contentServiceType && imageServiceType && contentServiceType === imageServiceType) {
+    // Post and image are about the same service type - bonus
+    score += 25
+    reasons.push(`Service match (${contentServiceType}): +25`)
+  }
+
   // 3. Day-appropriate imagery (+10)
   const dayPrefs = getDayPreferences(day)
   const dayMatches = dayPrefs.filter(pref => allTags.some(tag => tag.includes(pref))).length
@@ -212,6 +226,27 @@ function inferCategory(content: string): string {
   if (/emergency|urgent|24.7/.test(content)) return 'work'
   if (/maintenance|repair|service|install/.test(content)) return 'work'
   return 'work'
+}
+
+/**
+ * Detect the primary service type from text (post content, image tags, or description).
+ * Returns null if no clear service type is detected (general content).
+ */
+function detectServiceType(text: string): 'hvac' | 'plumbing' | 'electrical' | null {
+  const hvacKeywords = /\b(hvac|air condition|a\/c|ac unit|furnace|heating|cooling|heat pump|duct|thermostat|compressor|condenser|refrigerant|coil|blower|ventilation|mini.?split)\b/i
+  const plumbingKeywords = /\b(plumb|pipe|drain|faucet|water heater|toilet|sewer|leak|clog|fixture|garbage disposal|water line|sump pump|tankless|septic|valve|copper pipe)\b/i
+  const electricalKeywords = /\b(electric|wiring|panel|circuit|breaker|outlet|switch|volt|amp|generator|lighting|ceiling fan|rewire|electrical panel|surge protect|knob.and.tube)\b/i
+
+  const hvacScore = (text.match(hvacKeywords) || []).length
+  const plumbingScore = (text.match(plumbingKeywords) || []).length
+  const electricalScore = (text.match(electricalKeywords) || []).length
+
+  const maxScore = Math.max(hvacScore, plumbingScore, electricalScore)
+  if (maxScore === 0) return null // No clear service type - general content
+
+  if (hvacScore === maxScore) return 'hvac'
+  if (plumbingScore === maxScore) return 'plumbing'
+  return 'electrical'
 }
 
 function getDayPreferences(day: string): string[] {
