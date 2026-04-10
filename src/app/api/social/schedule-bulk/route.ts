@@ -33,19 +33,44 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Ensure user exists in database (Prisma adapter is disabled)
-    // Look up by email first to avoid unique constraint violations.
-    let userId = session.user.id
+    // Ensure user exists in database (Prisma adapter is disabled).
+    // Find any existing user we can use, or create one.
     const email = session.user.email || ''
-    const existingByEmail = email ? await prisma.user.findUnique({ where: { email } }) : null
-    if (existingByEmail) {
-      userId = existingByEmail.id
+    let userId: string
+
+    // Try to find existing user by email, googleId, or session ID
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(email ? [{ email }] : []),
+          { googleId: session.user.id },
+          { id: session.user.id }
+        ]
+      }
+    })
+
+    if (existingUser) {
+      userId = existingUser.id
     } else {
-      const existingById = await prisma.user.findUnique({ where: { id: userId } })
-      if (!existingById) {
-        await prisma.user.create({
-          data: { id: userId, name: session.user.name, email, image: session.user.image }
+      // No user found at all - create one with a unique email
+      try {
+        const newUser = await prisma.user.create({
+          data: {
+            id: session.user.id,
+            name: session.user.name || 'User',
+            email: email || `user-${session.user.id}@sosh.local`,
+            image: session.user.image,
+            googleId: session.user.id
+          }
         })
+        userId = newUser.id
+      } catch {
+        // If create still fails (race condition), try finding again
+        const retryUser = await prisma.user.findFirst({
+          where: { OR: [{ email }, { googleId: session.user.id }] }
+        })
+        if (!retryUser) throw new Error('Could not resolve user for scheduling')
+        userId = retryUser.id
       }
     }
 

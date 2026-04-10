@@ -56,20 +56,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Ensure user exists in database (Prisma adapter is disabled, so users
-    // aren't auto-created on sign-in. We need the record for the FK.)
-    // Look up by email first to avoid unique constraint violations, then by ID.
-    let userId = session.user.id
+    // Ensure user exists in database (Prisma adapter is disabled).
     const email = session.user.email || ''
-    const existingByEmail = email ? await prisma.user.findUnique({ where: { email } }) : null
-    if (existingByEmail) {
-      userId = existingByEmail.id
+    let userId: string
+
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          ...(email ? [{ email }] : []),
+          { googleId: session.user.id },
+          { id: session.user.id }
+        ]
+      }
+    })
+
+    if (existingUser) {
+      userId = existingUser.id
     } else {
-      const existingById = await prisma.user.findUnique({ where: { id: userId } })
-      if (!existingById) {
-        await prisma.user.create({
-          data: { id: userId, name: session.user.name, email, image: session.user.image }
+      try {
+        const newUser = await prisma.user.create({
+          data: {
+            id: session.user.id,
+            name: session.user.name || 'User',
+            email: email || `user-${session.user.id}@sosh.local`,
+            image: session.user.image,
+            googleId: session.user.id
+          }
         })
+        userId = newUser.id
+      } catch {
+        const retryUser = await prisma.user.findFirst({
+          where: { OR: [{ email }, { googleId: session.user.id }] }
+        })
+        if (!retryUser) throw new Error('Could not resolve user for scheduling')
+        userId = retryUser.id
       }
     }
 
