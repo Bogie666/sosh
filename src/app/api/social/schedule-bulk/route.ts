@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
         // Create scheduled post
         const scheduledPost = await prisma.scheduledPost.create({
           data: {
-            userId: session.user.id,
+            userId, // Resolved by ensureUserExists above
             content: post.content.trim(),
             platforms: [post.platform],
             businesses: [post.businessId],

@@ -74,11 +74,11 @@ export async function POST(request: NextRequest) {
     // Create scheduled post in database
     const scheduledPost = await prisma.scheduledPost.create({
       data: {
-        userId: session.user.id,
+        userId, // Resolved by ensureUserExists above
         content: content.trim(),
-        platforms: [platform], // Convert single platform to array
-        businesses: [businessId], // Convert single business to array
-        images: imageUrl ? [imageUrl] : [], // Convert single image to array if provided
+        platforms: [platform],
+        businesses: [businessId],
+        images: imageUrl ? [imageUrl] : [],
         scheduledFor: scheduledDate,
         status: 'SCHEDULED'
       }
@@ -121,9 +121,18 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'SCHEDULED'
     const limit = parseInt(searchParams.get('limit') || '50')
 
+    // Resolve user ID for consistency
+    let userId: string
+    try {
+      const userResult = await ensureUserExists(session)
+      userId = userResult.userId
+    } catch {
+      return NextResponse.json({ success: true, posts: [], count: 0 })
+    }
+
     const scheduledPosts = await prisma.scheduledPost.findMany({
       where: {
-        userId: session.user.id,
+        userId,
         status: status as any
       },
       orderBy: {

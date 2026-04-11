@@ -39,8 +39,33 @@ export function selectBestImage(
 
   if (available.length === 0) return null
 
-  // Score all images
-  const scored = available.map(img => scoreImage(img, content, day))
+  // Detect what service type the content is about (once, up front)
+  const contentServiceType = detectServiceType(content.toLowerCase())
+
+  // HARD FILTER: if the content clearly about one service type, remove all
+  // images of other service types from consideration entirely.
+  let eligible = available
+  if (contentServiceType) {
+    eligible = available.filter(img => {
+      const imgServiceType = detectServiceType(
+        [...(img.aiTags || []), ...(img.manualTags || []), img.aiDescription || '', img.originalName.toLowerCase()].join(' ')
+      )
+      // Keep if image has no detected type (ambiguous/general) or matches
+      return !imgServiceType || imgServiceType === contentServiceType
+    })
+
+    // If hard filter wipes everything out, fall back to original list rather
+    // than showing nothing (better to have a mismatch than no image)
+    if (eligible.length === 0) {
+      console.log(`⚠️ No service-matching images for ${contentServiceType}, falling back to all`)
+      eligible = available
+    } else {
+      console.log(`✅ Filtered to ${eligible.length} ${contentServiceType}-matching images`)
+    }
+  }
+
+  // Score eligible images
+  const scored = eligible.map(img => scoreImage(img, content, day))
 
   // Sort by score descending
   scored.sort((a, b) => b.score - a.score)
