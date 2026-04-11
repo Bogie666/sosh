@@ -726,7 +726,32 @@ export default function ImageLibraryManager() {
                   🔍 Image Library ({filteredImages.length} images)
                 </h3>
                 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={async () => {
+                      if (!confirm('Reset usage counts for all images? This will clear usageCount and lastUsed so the diversity algorithm starts fresh.')) return
+                      try {
+                        const res = await fetch('/api/images/reset-usage', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(selectedBusiness ? { businessId: selectedBusiness } : {})
+                        })
+                        const data = await res.json()
+                        if (data.success) {
+                          alert(`Reset ${data.count} image(s) usage counts`)
+                          await loadImages()
+                        } else {
+                          alert(`Failed: ${data.error}`)
+                        }
+                      } catch (e) {
+                        alert('Failed to reset image usage')
+                      }
+                    }}
+                    className="btn btn-outline btn-sm"
+                    title="Clear usage tracking for all images"
+                  >
+                    🔄 Reset Usage
+                  </button>
                   <button
                     onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
                     className="btn btn-outline btn-sm"
