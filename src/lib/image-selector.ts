@@ -128,18 +128,18 @@ function scoreImage(image: ImageAsset, content: string, day: string): ScoredImag
     reasons.push(`Category match: ${image.category}`)
   }
 
-  // 2b. Service type alignment - PENALIZE mismatches heavily
+  // 2b. Service type alignment - HARD EXCLUDE mismatches
   const contentServiceType = detectServiceType(contentLower)
-  const imageServiceType = detectServiceType([...allTags, description].join(' '))
+  const imageServiceType = detectServiceType([...allTags, description, image.originalName.toLowerCase()].join(' '))
 
   if (contentServiceType && imageServiceType && contentServiceType !== imageServiceType) {
-    // Post is about HVAC but image shows plumbing (or vice versa) - big penalty
-    score -= 40
-    reasons.push(`Service mismatch (post: ${contentServiceType}, image: ${imageServiceType}): -40`)
+    // Post is about HVAC but image shows plumbing (or vice versa) - effectively exclude
+    score -= 500
+    reasons.push(`Service mismatch EXCLUDE (post: ${contentServiceType}, image: ${imageServiceType}): -500`)
   } else if (contentServiceType && imageServiceType && contentServiceType === imageServiceType) {
-    // Post and image are about the same service type - bonus
-    score += 25
-    reasons.push(`Service match (${contentServiceType}): +25`)
+    // Post and image are about the same service type - strong bonus
+    score += 50
+    reasons.push(`Service match (${contentServiceType}): +50`)
   }
 
   // 3. Day-appropriate imagery (+10)
@@ -233,20 +233,35 @@ function inferCategory(content: string): string {
  * Returns null if no clear service type is detected (general content).
  */
 function detectServiceType(text: string): 'hvac' | 'plumbing' | 'electrical' | null {
-  const hvacKeywords = /\b(hvac|air condition|a\/c|ac unit|furnace|heating|cooling|heat pump|duct|thermostat|compressor|condenser|refrigerant|coil|blower|ventilation|mini.?split)\b/i
-  const plumbingKeywords = /\b(plumb|pipe|drain|faucet|water heater|toilet|sewer|leak|clog|fixture|garbage disposal|water line|sump pump|tankless|septic|valve|copper pipe)\b/i
-  const electricalKeywords = /\b(electric|wiring|panel|circuit|breaker|outlet|switch|volt|amp|generator|lighting|ceiling fan|rewire|electrical panel|surge protect|knob.and.tube)\b/i
+  // HVAC: heating, cooling, air, ductwork, thermostat, compressor, condenser, refrigeration
+  const hvacKeywords = /(hvac|air.?condition|\ba\/?c\b|furnace|heating|cooling|heat.?pump|duct|thermostat|compressor|condenser|refrigerant|refrigeration|evaporator|coil|blower|ventilation|mini.?split|\bhvac\b|central.?air)/i
 
-  const hvacScore = (text.match(hvacKeywords) || []).length
-  const plumbingScore = (text.match(plumbingKeywords) || []).length
-  const electricalScore = (text.match(electricalKeywords) || []).length
+  // Plumbing: pipes, drains, water heaters, fixtures, faucets, leaks, toilets, sewer
+  const plumbingKeywords = /(plumb|pipe|drain|faucet|water.?heater|toilet|sewer|leak|clog|fixture|garbage.?disposal|water.?line|sump.?pump|tankless|septic|\bvalve\b|copper.?pipe|pex\b|wrench|under.?sink|water.?supply|shut.?off.?valve)/i
+
+  // Electrical: wiring, panels, circuits, breakers, outlets, switches, voltage, lighting
+  const electricalKeywords = /(electric|wiring|\bpanel\b|circuit|breaker|outlet|\bswitch\b|volt|\bamp\b|generator|lighting|ceiling.?fan|rewir|electrical.?panel|surge.?protect|knob.?and.?tube|electrician|\bwires?\b|junction.?box)/i
+
+  const hvacScore = (text.match(new RegExp(hvacKeywords, 'gi')) || []).length
+  const plumbingScore = (text.match(new RegExp(plumbingKeywords, 'gi')) || []).length
+  const electricalScore = (text.match(new RegExp(electricalKeywords, 'gi')) || []).length
 
   const maxScore = Math.max(hvacScore, plumbingScore, electricalScore)
-  if (maxScore === 0) return null // No clear service type - general content
+  if (maxScore === 0) return null // No clear service type
 
-  if (hvacScore === maxScore) return 'hvac'
-  if (plumbingScore === maxScore) return 'plumbing'
-  return 'electrical'
+  // Only return a type if there's a clear winner (2x the runner-up or only one type matched)
+  const scores = [
+    { type: 'hvac' as const, score: hvacScore },
+    { type: 'plumbing' as const, score: plumbingScore },
+    { type: 'electrical' as const, score: electricalScore }
+  ].sort((a, b) => b.score - a.score)
+
+  // If the top score isn't clearly winning over the runner-up, treat as ambiguous
+  if (scores[0].score > 0 && scores[1].score > 0 && scores[0].score < scores[1].score * 2) {
+    return null
+  }
+
+  return scores[0].type
 }
 
 function getDayPreferences(day: string): string[] {

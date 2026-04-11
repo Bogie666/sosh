@@ -391,9 +391,39 @@ class AIService {
       .filter(s => s.month === req.month)
       .flatMap(s => [...s.hvac, ...s.plumbing, ...s.electrical, ...s.all])
 
+    const contentLower = content.toLowerCase()
+
     return allSpecials.filter(special => {
-      const words = special.toLowerCase().split(' ').filter(w => w.length > 3)
-      return words.some(word => content.toLowerCase().includes(word))
+      const specialLower = special.toLowerCase()
+
+      // Look for a distinctive substring match - either a dollar amount, percentage,
+      // or a sequence of 3+ significant words from the special appearing consecutively
+      const hasDollarMatch = /\$[\d,]+/.test(specialLower) &&
+        /\$[\d,]+/.test(contentLower) &&
+        (specialLower.match(/\$[\d,]+/g) || []).some(amt => contentLower.includes(amt))
+
+      const hasPercentMatch = /\d+%/.test(specialLower) &&
+        (specialLower.match(/\d+%\s*off\s*\w+/g) || []).some(m => contentLower.includes(m))
+
+      // Extract meaningful 3-word phrases from the special
+      const meaningfulWords = specialLower
+        .replace(/[^\w\s$%]/g, ' ')
+        .split(/\s+/)
+        .filter(w => w.length > 3 && !['with', 'from', 'your', 'only', 'plus', 'this', 'that', 'when'].includes(w))
+
+      let hasPhraseMatch = false
+      if (meaningfulWords.length >= 3) {
+        // Check for any 3 consecutive meaningful words
+        for (let i = 0; i <= meaningfulWords.length - 3; i++) {
+          const phrase = meaningfulWords.slice(i, i + 3).join(' ')
+          if (contentLower.includes(phrase)) {
+            hasPhraseMatch = true
+            break
+          }
+        }
+      }
+
+      return hasDollarMatch || hasPercentMatch || hasPhraseMatch
     })
   }
 }
