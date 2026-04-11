@@ -184,15 +184,19 @@ interface DayContentType {
  * falls back to a sensible default distribution.
  */
 function getDayContentType(day: string, strategy: ContentStrategy | null): DayContentType {
-  const isPrimaryPromoDay = strategy?.promotionFocus?.primary === day
-  const isSecondaryPromoDay = strategy?.promotionFocus?.secondary === day
+  // Default strategy if none is configured - balanced with Wed/Mon promos
+  const effectivePromoPrimary = strategy?.promotionFocus?.primary || 'wednesday'
+  const effectivePromoSecondary = strategy?.promotionFocus?.secondary || 'monday'
   const strat = strategy?.contentStrategy || 'balanced'
+
+  const isPrimaryPromoDay = effectivePromoPrimary === day
+  const isSecondaryPromoDay = effectivePromoSecondary === day
 
   // Service type rotation for specials - cycle through so not every promo day
   // pushes the same service type
   const serviceTypes = ['hvac', 'plumbing', 'electrical']
   const dayIndex = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].indexOf(day)
-  const rotatedServiceType = serviceTypes[dayIndex % serviceTypes.length]
+  const rotatedServiceType = serviceTypes[Math.abs(dayIndex) % serviceTypes.length]
 
   // Primary promo day - always promotional regardless of strategy
   if (isPrimaryPromoDay) {
@@ -210,23 +214,24 @@ function getDayContentType(day: string, strategy: ContentStrategy | null): DayCo
       type: 'promotional',
       focus: 'value and savings opportunities, soft promotion',
       includeSpecials: true,
-      serviceTypeFocus: serviceTypes[(dayIndex + 1) % serviceTypes.length]
+      serviceTypeFocus: serviceTypes[(Math.abs(dayIndex) + 1) % serviceTypes.length]
     }
   }
 
-  // Non-promo days - vary by strategy
+  // Non-primary/secondary days - vary by strategy
   if (strat === 'aggressive') {
-    // Aggressive: most days are promotional
+    // Aggressive: ~60% promotional. Most non-promo-focus days still push specials.
     const aggressiveTypes: DayContentType[] = [
       { type: 'promotional', focus: 'urgency and limited availability', includeSpecials: true, serviceTypeFocus: rotatedServiceType },
-      { type: 'trust', focus: 'results, reputation, and why customers choose us', includeSpecials: false },
+      { type: 'trust', focus: 'results and reputation (include a special if natural)', includeSpecials: true, serviceTypeFocus: rotatedServiceType },
       { type: 'promotional', focus: 'value proposition and competitive advantage', includeSpecials: true, serviceTypeFocus: rotatedServiceType },
+      { type: 'educational', focus: 'practical tip with a soft sell at the end', includeSpecials: true, serviceTypeFocus: rotatedServiceType },
     ]
-    return aggressiveTypes[dayIndex % aggressiveTypes.length]
+    return aggressiveTypes[Math.abs(dayIndex) % aggressiveTypes.length]
   }
 
   if (strat === 'conservative') {
-    // Conservative: mostly educational, rarely promotional
+    // Conservative: ~20% promotional. Mostly educational, occasional soft promo.
     const conservativeTypes: DayContentType[] = [
       { type: 'educational', focus: 'helpful tips and expert advice the reader can use today', includeSpecials: false },
       { type: 'trust', focus: 'expertise, experience, and what makes us reliable', includeSpecials: false },
@@ -234,18 +239,18 @@ function getDayContentType(day: string, strategy: ContentStrategy | null): DayCo
       { type: 'educational', focus: 'maintenance advice and preventive care', includeSpecials: false },
       { type: 'engagement', focus: 'asking a question or sharing something relatable', includeSpecials: false },
     ]
-    return conservativeTypes[dayIndex % conservativeTypes.length]
+    return conservativeTypes[Math.abs(dayIndex) % conservativeTypes.length]
   }
 
-  // Balanced (default): mix of everything
+  // Balanced (default): ~40% promotional. 2 focus days + 1 rotating promo day.
   const balancedTypes: DayContentType[] = [
     { type: 'trust', focus: 'expertise, reliability, and track record', includeSpecials: false },
+    { type: 'promotional', focus: 'value and a featured offer', includeSpecials: true, serviceTypeFocus: rotatedServiceType },
     { type: 'educational', focus: 'practical tips and useful knowledge', includeSpecials: false },
     { type: 'engagement', focus: 'connecting with the audience, asking questions, being relatable', includeSpecials: false },
     { type: 'community', focus: 'local community connection and being a trusted neighbor', includeSpecials: false },
-    { type: 'educational', focus: 'maintenance advice and how to protect your home', includeSpecials: false },
   ]
-  return balancedTypes[dayIndex % balancedTypes.length]
+  return balancedTypes[Math.abs(dayIndex) % balancedTypes.length]
 }
 
 // --- Internal prompt section builders ---
