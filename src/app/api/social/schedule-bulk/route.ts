@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/auth'
 import { prisma } from '@/lib/prisma'
+import { ensureUserExists } from '@/lib/ensure-user'
 
 interface BulkScheduleRequest {
   posts: {
@@ -33,45 +34,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Ensure user exists in database (Prisma adapter is disabled).
-    // Find any existing user we can use, or create one.
-    const email = session.user.email || ''
+    // Ensure user exists in database before creating FK-linked ScheduledPost
     let userId: string
-
-    // Try to find existing user by email, googleId, or session ID
-    const existingUser = await prisma.user.findFirst({
-      where: {
-        OR: [
-          ...(email ? [{ email }] : []),
-          { googleId: session.user.id },
-          { id: session.user.id }
-        ]
-      }
-    })
-
-    if (existingUser) {
-      userId = existingUser.id
-    } else {
-      // No user found at all - create one with a unique email
-      try {
-        const newUser = await prisma.user.create({
-          data: {
-            id: session.user.id,
-            name: session.user.name || 'User',
-            email: email || `user-${session.user.id}@sosh.local`,
-            image: session.user.image,
-            googleId: session.user.id
-          }
-        })
-        userId = newUser.id
-      } catch {
-        // If create still fails (race condition), try finding again
-        const retryUser = await prisma.user.findFirst({
-          where: { OR: [{ email }, { googleId: session.user.id }] }
-        })
-        if (!retryUser) throw new Error('Could not resolve user for scheduling')
-        userId = retryUser.id
-      }
+    try {
+      const userResult = await ensureUserExists(session)
+      userId = userResult.userId
+      console.log(`📝 [schedule-bulk] User resolved: ${userId} (method: ${userResult.method})`)
+    } catch (err) {
+      console.error('❌ [schedule-bulk] Failed to ensure user:', err)
+      return NextResponse.json(
+        { success: false, error: err instanceof Error ? err.message : 'Failed to resolve user' },
+        { status: 500 }
+      )
     }
 
     const now = new Date()

@@ -46,9 +46,18 @@ export const config = {
   callbacks: {
     async session({ session, token }) {
       if (session?.user && token) {
-        // Add user ID from token to session
-        session.user.id = token.sub || 'user-' + Date.now()
-        
+        // Stable user ID resolution:
+        // 1. Prefer token.sub (Google OAuth subject ID - stable across sessions)
+        // 2. Fall back to token.userId (saved from JWT callback)
+        // 3. Fall back to a deterministic hash of email (stable per user)
+        // NEVER use Date.now() - that creates a new ID every request
+        const stableId = token.sub
+          || (token.userId as string | undefined)
+          || (session.user.email ? `email-${session.user.email}` : null)
+          || 'anonymous'
+
+        session.user.id = stableId
+
         // Add token info from JWT callback
         if (token?.accessToken) {
           session.accessToken = token.accessToken as string
@@ -59,11 +68,11 @@ export const config = {
         if (token?.expiresAt) {
           session.expiresAt = token.expiresAt as number
         }
-        
+
         // For now, assign all businesses to user (since we can't check database)
         session.user.businesses = ['lex-dallas', 'lex-etx', 'lyons']
       }
-      
+
       return session
     },
     
